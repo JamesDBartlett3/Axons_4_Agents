@@ -1,6 +1,8 @@
-# Claude Memory Graph System
+# Axons for Agents
 
-A graph-based memory system for Claude, using Memgraph as the backend database. This system stores memories as nodes with rich relationships between them, enabling associative recall based on shared concepts, keywords, topics, entities, and more.
+A graph-based memory system for AI agents, using Memgraph as the backend database. This system stores memories as nodes with rich relationships between them, enabling associative recall based on shared concepts, keywords, topics, entities, and more.
+
+**MCP Support**: This system is being enhanced to support the Model Context Protocol (MCP), allowing AI assistants to interact with memories through native tool calls.
 
 ## Table of Contents
 
@@ -15,7 +17,7 @@ A graph-based memory system for Claude, using Memgraph as the backend database. 
 
 ### The Problem
 
-Storing Claude's memories in flat markdown files works for simple recall, but fails when you need to:
+Storing AI agent memories in flat markdown files works for simple recall, but fails when you need to:
 - Find memories related to a specific concept across multiple topics
 - Trace the reasoning chain behind a decision
 - Identify contradictions between old and new information
@@ -33,21 +35,20 @@ A graph database where:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Windows Host                             │
+│                     Host Machine                            │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  Python Client (memory_client.py)                   │    │
 │  │  - Connects via Bolt protocol (localhost:7687)      │    │
 │  │  - Creates/queries memories and relationships       │    │
 │  │  - Exports directory.md for quick scanning          │    │
 │  └─────────────────────────────────────────────────────┘    │
-│                            │                                 │
-│                     Bolt Protocol                            │
-│                            │                                 │
+│                            │                                │
+│                     Bolt Protocol                           │
+│                            │                                │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  WSL2 (Ubuntu)                                      │    │
+│  │  Memgraph Database (WSL2/Docker/Native)             │    │
 │  │  ┌───────────────────────────────────────────────┐  │    │
-│  │  │  Memgraph Database                            │  │    │
-│  │  │  - Runs as systemd service                    │  │    │
+│  │  │  Memgraph                                     │  │    │
 │  │  │  - Listens on port 7687                       │  │    │
 │  │  │  - In-memory with WAL persistence             │  │    │
 │  │  └───────────────────────────────────────────────┘  │    │
@@ -62,8 +63,9 @@ If you just want to get up and running, see [Setup Instructions](./docs/setup-in
 ## File Structure
 
 ```
-ClaudeMemgraphSetup/
+Axons_4_Agents/
 ├── README.md                 # This file
+├── TODO.md                   # MCP implementation roadmap
 ├── docs/
 │   ├── design-decisions.md   # Why we made the choices we did
 │   ├── schema.md             # Database schema documentation
@@ -74,14 +76,13 @@ ClaudeMemgraphSetup/
     ├── schema.cypher         # Database schema initialization
     ├── memory_client.py      # Python client library
     ├── test_memory_system.py # Test suite
-    └── directory.md          # Template for node directory
+    └── directory.md          # Memory graph directory index
 ```
 
 ## Requirements
 
-- Windows 10/11 with WSL2
-- Ubuntu (via WSL)
 - Python 3.10+
+- Memgraph (via WSL2, Docker, or native installation)
 - ~200MB RAM for Memgraph at idle (scales with data)
 
 ## License
