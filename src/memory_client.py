@@ -1250,39 +1250,72 @@ class MemoryGraphClient:
         """Get the currently active compartment ID."""
         return self._active_compartment_id
 
-    def add_memory_to_compartment(self, memory_id: str, compartment_id: str):
-        """Add a memory to a compartment.
+    def add_memory_to_compartment(self, memory_ids, compartment_id: str):
+        """Add one or more memories to a compartment.
 
-        A memory can only be in one compartment at a time.
+        A memory can be in multiple compartments (overlapping compartments).
+        Adding to a compartment the memory is already in is a no-op.
+
+        Args:
+            memory_ids: Single memory ID (str) or list of memory IDs
+            compartment_id: The compartment to add to
         """
-        # Remove from any existing compartment first
-        self._run_write(
-            "MATCH (m:Memory {id: $mid})-[r:IN_COMPARTMENT]->() DELETE r",
-            {"mid": memory_id}
-        )
-        # Add to new compartment
-        query = """
-        MATCH (m:Memory {id: $mid}), (c:Compartment {id: $cid})
-        CREATE (m)-[:IN_COMPARTMENT]->(c)
+        # Normalize to list
+        if isinstance(memory_ids, str):
+            memory_ids = [memory_ids]
+
+        for memory_id in memory_ids:
+            # Check if already in this compartment
+            check_query = """
+            MATCH (m:Memory {id: $mid})-[:IN_COMPARTMENT]->(c:Compartment {id: $cid})
+            RETURN count(*) AS cnt
+            """
+            result = self._run_query(check_query, {"mid": memory_id, "cid": compartment_id})
+            if result and result[0]["cnt"] > 0:
+                continue  # Already in this compartment
+
+            # Add to compartment
+            query = """
+            MATCH (m:Memory {id: $mid}), (c:Compartment {id: $cid})
+            CREATE (m)-[:IN_COMPARTMENT]->(c)
+            """
+            self._run_write(query, {"mid": memory_id, "cid": compartment_id})
+
+    def remove_memory_from_compartment(self, memory_ids, compartment_id: str = None):
+        """Remove one or more memories from compartment(s).
+
+        Args:
+            memory_ids: Single memory ID (str) or list of memory IDs
+            compartment_id: Specific compartment to remove from. If None, removes from ALL compartments.
         """
-        self._run_write(query, {"mid": memory_id, "cid": compartment_id})
+        # Normalize to list
+        if isinstance(memory_ids, str):
+            memory_ids = [memory_ids]
 
-    def remove_memory_from_compartment(self, memory_id: str):
-        """Remove a memory from its compartment (make it global)."""
-        self._run_write(
-            "MATCH (m:Memory {id: $mid})-[r:IN_COMPARTMENT]->() DELETE r",
-            {"mid": memory_id}
-        )
+        for memory_id in memory_ids:
+            if compartment_id:
+                self._run_write(
+                    "MATCH (m:Memory {id: $mid})-[r:IN_COMPARTMENT]->(c:Compartment {id: $cid}) DELETE r",
+                    {"mid": memory_id, "cid": compartment_id}
+                )
+            else:
+                self._run_write(
+                    "MATCH (m:Memory {id: $mid})-[r:IN_COMPARTMENT]->() DELETE r",
+                    {"mid": memory_id}
+                )
 
-    def get_memory_compartment(self, memory_id: str) -> Optional[Dict]:
-        """Get the compartment a memory belongs to, if any."""
+    def get_memory_compartments(self, memory_id: str) -> List[Dict]:
+        """Get all compartments a memory belongs to.
+
+        Returns:
+            List of compartment dicts, empty if memory is global (no compartments).
+        """
         query = """
         MATCH (m:Memory {id: $mid})-[:IN_COMPARTMENT]->(c:Compartment)
         RETURN c.id AS id, c.name AS name, c.permeability AS permeability,
                c.allowExternalConnections AS allowExternalConnections
         """
-        result = self._run_query(query, {"mid": memory_id})
-        return result[0] if result else None
+        return self._run_query(query, {"mid": memory_id})
 
     def get_memories_in_compartment(self, compartment_id: str, limit: int = 100) -> List[Dict]:
         """Get all memories in a compartment."""
@@ -1297,25 +1330,34 @@ class MemoryGraphClient:
     def can_form_connection(self, memory_id_1: str, memory_id_2: str) -> bool:
         """Check if an organic connection can form between two memories.
 
-        This checks compartment boundaries - returns True if both memories
-        are in the same compartment, or if their compartments allow external connections.
+        This checks compartment boundaries using strict fail-safe logic:
+        - ALL compartments of BOTH memories must allow external connections
+        - Exception: memories in the SAME single compartment (both only in that one)
+
+        Fail-safe: Any single compartment that disallows external connections will block,
+        even if the memories share another compartment.
         """
-        comp1 = self.get_memory_compartment(memory_id_1)
-        comp2 = self.get_memory_compartment(memory_id_2)
+        comps1 = self.get_memory_compartments(memory_id_1)
+        comps2 = self.get_memory_compartments(memory_id_2)
 
         # Both without compartment - allowed
-        if comp1 is None and comp2 is None:
+        if not comps1 and not comps2:
             return True
 
-        # Same compartment - allowed
-        if comp1 and comp2 and comp1["id"] == comp2["id"]:
+        # Special case: both memories are in exactly the same set of compartments
+        # (i.e., they're fully co-located, not just sharing one)
+        ids1 = {c["id"] for c in comps1}
+        ids2 = {c["id"] for c in comps2}
+        if ids1 == ids2 and ids1:  # Same non-empty set of compartments
             return True
 
-        # Different compartments or one without - check allow_external_connections
-        if comp1 and not comp1.get("allowExternalConnections", True):
-            return False
-        if comp2 and not comp2.get("allowExternalConnections", True):
-            return False
+        # Fail-safe: ANY compartment that blocks external connections will block
+        for comp in comps1:
+            if not comp.get("allowExternalConnections", True):
+                return False
+        for comp in comps2:
+            if not comp.get("allowExternalConnections", True):
+                return False
 
         return True
 
@@ -1323,14 +1365,16 @@ class MemoryGraphClient:
                       connection_permeability: str = None) -> bool:
         """Check if data can flow from one memory to another.
 
-        This implements the four-layer permeability check:
+        This implements multi-layer permeability checking with fail-safe logic:
         1. Source memory must allow OUTWARD flow
-        2. Source compartment must allow OUTWARD flow
-        3. Destination compartment must allow INWARD flow
+        2. ALL source compartments must allow OUTWARD flow
+        3. ALL destination compartments must allow INWARD flow
         4. Destination memory must allow INWARD flow
         5. Connection must allow this direction (if provided)
 
-        All layers must agree. If ANY layer blocks, the data flow is blocked.
+        Fail-safe: ANY layer that blocks will block the entire data flow.
+        This means if a memory is in multiple compartments, ALL of them must
+        allow the flow direction.
 
         Args:
             from_memory_id: Memory where data originates
@@ -1350,20 +1394,20 @@ class MemoryGraphClient:
         if to_mem_perm and not Permeability(to_mem_perm).allows_inward():
             return False
 
-        # Get compartments
-        from_comp = self.get_memory_compartment(from_memory_id)
-        to_comp = self.get_memory_compartment(to_memory_id)
+        # Get ALL compartments for both memories
+        from_comps = self.get_memory_compartments(from_memory_id)
+        to_comps = self.get_memory_compartments(to_memory_id)
 
-        # Check source compartment allows outward flow
-        if from_comp:
-            from_perm = Permeability(from_comp.get("permeability", "open"))
-            if not from_perm.allows_outward():
+        # Fail-safe: ALL source compartments must allow outward flow
+        for comp in from_comps:
+            perm = Permeability(comp.get("permeability", "open"))
+            if not perm.allows_outward():
                 return False
 
-        # Check destination compartment allows inward flow
-        if to_comp:
-            to_perm = Permeability(to_comp.get("permeability", "open"))
-            if not to_perm.allows_inward():
+        # Fail-safe: ALL destination compartments must allow inward flow
+        for comp in to_comps:
+            perm = Permeability(comp.get("permeability", "open"))
+            if not perm.allows_inward():
                 return False
 
         # Check connection permeability (if provided)
@@ -1405,18 +1449,23 @@ class MemoryGraphClient:
         result = self._run_query(query, {"id": memory_id})
         return result[0]["permeability"] if result else None
 
-    def set_memory_permeability(self, memory_id: str, permeability: Permeability):
-        """Set the permeability of a specific memory.
+    def set_memory_permeability(self, memory_ids, permeability: Permeability):
+        """Set the permeability of one or more memories.
 
         Args:
-            memory_id: The memory ID
+            memory_ids: Single memory ID (str) or list of memory IDs
             permeability: The new permeability setting
         """
-        query = """
-        MATCH (m:Memory {id: $id})
-        SET m.permeability = $perm
-        """
-        self._run_write(query, {"id": memory_id, "perm": permeability.value})
+        # Normalize to list
+        if isinstance(memory_ids, str):
+            memory_ids = [memory_ids]
+
+        for memory_id in memory_ids:
+            query = """
+            MATCH (m:Memory {id: $id})
+            SET m.permeability = $perm
+            """
+            self._run_write(query, {"id": memory_id, "perm": permeability.value})
 
     # ========================================================================
     # RELATIONSHIP OPERATIONS

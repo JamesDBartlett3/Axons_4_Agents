@@ -748,9 +748,9 @@ def test_compartment_basic():
             )
 
             # Verify memory is in compartment
-            mem_comp = client.get_memory_compartment(m1)
-            assert mem_comp is not None, "Memory should have compartment"
-            assert mem_comp["id"] == comp_id, "Should be in correct compartment"
+            comps = client.get_memory_compartments(m1)
+            assert len(comps) > 0, "Memory should have compartment"
+            assert comps[0]["id"] == comp_id, "Should be in correct compartment"
             print("  Memory in compartment: OK")
 
             # Test active compartment
@@ -760,9 +760,9 @@ def test_compartment_basic():
             m2 = quick_store_memory(
                 client, content="Another secret", summary="Secret 2"
             )
-            mem_comp2 = client.get_memory_compartment(m2)
-            assert mem_comp2 is not None, "Should use active compartment"
-            assert mem_comp2["id"] == comp_id, "Should be in active compartment"
+            comps2 = client.get_memory_compartments(m2)
+            assert len(comps2) > 0, "Should use active compartment"
+            assert comps2[0]["id"] == comp_id, "Should be in active compartment"
             print("  Active compartment: OK")
 
             # Test get memories in compartment
@@ -772,8 +772,8 @@ def test_compartment_basic():
 
             # Test remove from compartment
             client.remove_memory_from_compartment(m1)
-            mem_comp = client.get_memory_compartment(m1)
-            assert mem_comp is None, "Should be removed from compartment"
+            comps = client.get_memory_compartments(m1)
+            assert len(comps) == 0, "Should be removed from compartment"
             print("  Remove from compartment: OK")
 
             # Test update compartment
@@ -1153,6 +1153,102 @@ def test_memory_permeability():
         return False
 
 
+def test_overlapping_compartments():
+    """Test overlapping compartments with fail-safe logic."""
+    print("\nTesting overlapping compartments...")
+    try:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
+            # Create compartments with different permeabilities
+            open_comp = Compartment(name="Open", permeability=Permeability.OPEN)
+            open_id = client.create_compartment(open_comp)
+
+            secure_comp = Compartment(
+                name="Secure",
+                permeability=Permeability.OSMOTIC_INWARD,
+                allow_external_connections=True
+            )
+            secure_id = client.create_compartment(secure_comp)
+
+            closed_comp = Compartment(
+                name="Closed",
+                permeability=Permeability.CLOSED,
+                allow_external_connections=False
+            )
+            closed_id = client.create_compartment(closed_comp)
+
+            # Create memories
+            m1 = quick_store_memory(client, content="Memory 1", summary="M1", compartment_id="")
+            m2 = quick_store_memory(client, content="Memory 2", summary="M2", compartment_id="")
+            m3 = quick_store_memory(client, content="Memory 3", summary="M3", compartment_id="")
+
+            # Test: Add memory to multiple compartments
+            client.add_memory_to_compartment(m1, open_id)
+            client.add_memory_to_compartment(m1, secure_id)
+
+            comps = client.get_memory_compartments(m1)
+            assert len(comps) == 2, f"Should have 2 compartments, got {len(comps)}"
+            print("  Memory in multiple compartments: OK")
+
+            # Test: Fail-safe data flow
+            # m1 is in OPEN and OSMOTIC_INWARD
+            # Data can flow IN (both allow inward)
+            # Data cannot flow OUT (OSMOTIC_INWARD blocks outward)
+            client.add_memory_to_compartment(m2, open_id)  # m2 in OPEN only
+            client.link_memories(m1, m2)
+
+            # m2 -> m1: Should work (m1 allows inward from both compartments)
+            assert client.can_data_flow(m2, m1), "Data should flow into multi-compartment memory"
+            print("  Fail-safe inward flow: OK")
+
+            # m1 -> m2: Should block (Secure compartment blocks outward)
+            assert not client.can_data_flow(m1, m2), "Secure compartment should block outward"
+            print("  Fail-safe outward block: OK")
+
+            # Test: Connection formation - same compartment set
+            # m1 is in [open, secure], put m3 in same set
+            client.add_memory_to_compartment(m3, open_id)
+            client.add_memory_to_compartment(m3, secure_id)
+            # Should allow connection (they're in exactly the same compartments)
+            assert client.can_form_connection(m1, m3), "Should allow connection within same compartment set"
+            print("  Same compartment set allows connection: OK")
+
+            # Test: Connection formation with closed compartment
+            m4 = quick_store_memory(client, content="Memory 4", summary="M4", compartment_id="")
+            client.add_memory_to_compartment(m4, open_id)
+            client.add_memory_to_compartment(m4, closed_id)
+            # m4 is in OPEN and CLOSED (allow_external_connections=False)
+            # Connection should be blocked due to CLOSED
+            assert not client.can_form_connection(m4, m2), "Closed compartment should block external connection"
+            print("  Closed compartment blocks connection: OK")
+
+            # Test: Remove from specific compartment
+            client.remove_memory_from_compartment(m1, secure_id)
+            comps = client.get_memory_compartments(m1)
+            assert len(comps) == 1, f"Should have 1 compartment after removal, got {len(comps)}"
+            assert comps[0]["id"] == open_id, "Should still be in Open compartment"
+            print("  Remove from specific compartment: OK")
+
+            # Now m1 -> m2 should work (only in OPEN now)
+            assert client.can_data_flow(m1, m2), "After removing Secure, data should flow"
+            print("  Data flows after compartment removal: OK")
+
+            # Test: Remove from all compartments
+            client.remove_memory_from_compartment(m1)
+            comps = client.get_memory_compartments(m1)
+            assert len(comps) == 0, "Should have no compartments after full removal"
+            print("  Remove from all compartments: OK")
+
+        print("  Overlapping compartments: OK")
+        return True
+    except Exception as e:
+        print(f"  Overlapping compartments test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def cleanup_test_data():
     """Remove all test data from the database."""
     print("\nCleaning up test data...")
@@ -1202,6 +1298,7 @@ def main():
         results["compartment_query"] = test_compartment_query_filtering()
         results["compartment_conn_perm"] = test_compartment_connection_permeability()
         results["memory_permeability"] = test_memory_permeability()
+        results["overlapping_compartments"] = test_overlapping_compartments()
         results["directory"] = test_directory_export()
 
     # Always cleanup

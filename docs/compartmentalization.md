@@ -21,6 +21,8 @@ A compartment is a named boundary that groups memories together. Each compartmen
 - **permeability**: Controls data flow direction (see below)
 - **allow_external_connections**: Whether organic connections can form to memories outside this compartment
 
+**Overlapping Compartments**: A memory can belong to multiple compartments simultaneously. When this happens, fail-safe logic applies - ANY compartment that blocks an operation will block it, regardless of what other compartments allow.
+
 ### Permeability
 
 Permeability controls data flow direction through compartment boundaries. Think of it from the perspective of queries trying to retrieve data:
@@ -36,22 +38,24 @@ Permeability controls data flow direction through compartment boundaries. Think 
 - **Inward**: Data flowing INTO the compartment (the compartment can retrieve external data)
 - **Outward**: Data flowing OUT OF the compartment (external queries can retrieve data from inside)
 
-### Four-Layer Check
+### Multi-Layer Check (Fail-Safe)
 
-When querying data across memories, four layers are checked:
+When querying data across memories, multiple layers are checked:
 
 1. **Source memory**: Must allow OUTWARD flow
-2. **Source compartment**: Must allow OUTWARD flow
-3. **Destination compartment**: Must allow INWARD flow
+2. **ALL source compartments**: Each must allow OUTWARD flow
+3. **ALL destination compartments**: Each must allow INWARD flow
 4. **Destination memory**: Must allow INWARD flow
 5. **Connection**: Must allow this direction (if set)
 
-All layers must agree. If ANY layer blocks, the data flow is blocked.
+**Fail-safe logic**: ANY layer that blocks will block the entire data flow. If a memory belongs to multiple compartments, ALL of them must allow the flow direction.
 
 This provides fine-grained control at multiple levels:
 - **Memory-level**: Individual memories can restrict their own visibility
-- **Compartment-level**: Groups of memories share a common policy
+- **Compartment-level**: Groups of memories share a common policy (overlapping allowed)
 - **Connection-level**: Specific relationships can have custom rules
+
+**Example**: If a memory is in both "Public" (OPEN) and "Restricted" (OSMOTIC_INWARD) compartments, it cannot leak data out because the Restricted compartment blocks outward flow.
 
 ## Quick Start
 
@@ -103,8 +107,46 @@ memory_id = quick_store_memory(
 # Or assign after creation
 client.add_memory_to_compartment(memory_id, compartment_id)
 
-# Remove from compartment (make global)
+# Remove from specific compartment
+client.remove_memory_from_compartment(memory_id, compartment_id)
+
+# Remove from ALL compartments (make global)
 client.remove_memory_from_compartment(memory_id)
+```
+
+### Overlapping Compartments
+
+A memory can belong to multiple compartments simultaneously:
+
+```python
+# Add memory to multiple compartments
+client.add_memory_to_compartment(memory_id, project_compartment_id)
+client.add_memory_to_compartment(memory_id, security_compartment_id)
+
+# Get all compartments for a memory
+compartments = client.get_memory_compartments(memory_id)
+for comp in compartments:
+    print(f"  {comp['name']}: {comp['permeability']}")
+
+# Remove from just one compartment
+client.remove_memory_from_compartment(memory_id, project_compartment_id)
+```
+
+**Fail-safe behavior**: When a memory is in multiple compartments:
+- **Connection formation**: Allowed if memories share ANY compartment, OR if ALL compartments allow external connections
+- **Data flow**: Blocked if ANY compartment blocks the flow direction
+
+```python
+# Example: Memory in both OPEN and OSMOTIC_INWARD compartments
+# Result: Cannot leak data out (OSMOTIC_INWARD blocks outward flow)
+open_comp = client.create_compartment(Compartment(name="Open", permeability=Permeability.OPEN))
+secure_comp = client.create_compartment(Compartment(name="Secure", permeability=Permeability.OSMOTIC_INWARD))
+
+client.add_memory_to_compartment(mem_id, open_comp)
+client.add_memory_to_compartment(mem_id, secure_comp)
+
+# This memory can receive data (both allow inward)
+# But cannot send data out (Secure blocks outward)
 ```
 
 ## Connection Formation Rules
@@ -262,13 +304,13 @@ class Permeability(Enum):
 | `delete_compartment(id, reassign_memories)` | Delete a compartment |
 | `set_active_compartment(id)` | Set active compartment for new memories |
 | `get_active_compartment()` | Get current active compartment |
-| `add_memory_to_compartment(mem_id, comp_id)` | Assign memory to compartment |
-| `remove_memory_from_compartment(mem_id)` | Remove memory from compartment |
-| `get_memory_compartment(mem_id)` | Get memory's compartment |
+| `add_memory_to_compartment(mem_ids, comp_id)` | Add memory(s) to compartment (accepts single ID or list) |
+| `remove_memory_from_compartment(mem_ids, comp_id)` | Remove memory(s) from compartment (accepts single ID or list) |
+| `get_memory_compartments(mem_id)` | Get all compartments for a memory |
 | `get_memories_in_compartment(comp_id)` | List memories in compartment |
 | `can_form_connection(mem1, mem2)` | Check if connection can form |
 | `can_data_flow(from_mem, to_mem)` | Check if data can flow (four-layer check) |
-| `set_memory_permeability(mem_id, perm)` | Set memory permeability |
+| `set_memory_permeability(mem_ids, perm)` | Set permeability for memory(s) (accepts single ID or list) |
 | `get_memory_permeability(mem_id)` | Get memory permeability |
 | `set_connection_permeability(m1, m2, perm)` | Set connection permeability |
 | `get_connection_permeability(m1, m2)` | Get connection permeability |
