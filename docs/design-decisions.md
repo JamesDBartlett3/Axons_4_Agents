@@ -264,3 +264,18 @@ Without plasticity, all connections are equally weighted. This loses critical in
 - **Noise reduction**: Weak, rarely-reinforced connections can be pruned to focus on what matters
 
 This model allows the memory system to learn and adapt based on actual usage patterns, not just initial storage.
+
+### Tuneable Parameters
+
+All plasticity behavior is configurable through `PlasticityConfig`. Key tuneable aspects:
+
+| Category | Parameters | Purpose |
+|----------|------------|---------|
+| **Learning Rate** | `learning_rate` | Global multiplier (0=disabled, >1=faster) |
+| **Strengthening** | `base_strengthening_amount`, `strengthening_curve`, `max_strength` | How connections grow stronger |
+| **Decay** | `decay_curve`, `decay_half_life`, `decay_threshold` | How unused connections weaken |
+| **Pruning** | `pruning_threshold`, `auto_prune` | When to remove dead connections |
+| **Retrieval Effects** | `retrieval_strengthens`, `retrieval_weakens_competitors` | How accessing memories affects the graph |
+| **Hebbian Learning** | `hebbian_learning_amount`, `hebbian_creates_connections` | Co-access strengthening |
+
+See [Plasticity Configuration Guide](plasticity-config.md) for complete parameter reference.

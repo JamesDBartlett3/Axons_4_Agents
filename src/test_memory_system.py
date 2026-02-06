@@ -20,6 +20,7 @@ from memory_client import (
     Memory, Concept, Keyword, Topic, Entity, Source,
     Decision, Goal, Question, Context, Preference,
     EntityType, SourceType, GoalStatus, QuestionStatus, ContextType,
+    PlasticityConfig, DecayCurve, StrengtheningCurve,
     quick_store_memory
 )
 
@@ -219,6 +220,87 @@ def test_directory_export():
         return False
 
 
+def test_plasticity_config():
+    """Test plasticity configuration and brain-like learning."""
+    print("\nTesting plasticity configuration...")
+    try:
+        # Test with custom plasticity config
+        config = PlasticityConfig(
+            learning_rate=1.5,
+            base_strengthening_amount=0.2,
+            hebbian_learning_amount=0.1,
+            decay_curve=DecayCurve.EXPONENTIAL,
+            retrieval_strengthens=True,
+            retrieval_strengthening_amount=0.05,
+        )
+
+        with MemoryGraphClient(db_path=get_test_db_path(), plasticity_config=config) as client:
+            client.initialize_schema()
+
+            # Create two memories and link them
+            memory1_id = quick_store_memory(
+                client,
+                content="First test memory for plasticity.",
+                summary="Plasticity test memory 1",
+                concepts=["testing"],
+                keywords=["plasticity"],
+            )
+
+            memory2_id = quick_store_memory(
+                client,
+                content="Second test memory for plasticity.",
+                summary="Plasticity test memory 2",
+                concepts=["testing"],
+                keywords=["plasticity"],
+            )
+
+            # Link the memories with initial strength
+            client.link_memories(memory1_id, memory2_id, strength=0.5)
+            print(f"  Initial link strength: 0.5")
+
+            # Strengthen the connection
+            client.strengthen_memory_link(memory1_id, memory2_id)
+            new_strength = client.get_memory_link_strength(memory1_id, memory2_id)
+            print(f"  After strengthening: {new_strength:.3f}")
+            assert new_strength > 0.5, "Strength should increase"
+
+            # Test Hebbian learning (co-accessed memories)
+            client.apply_hebbian_learning([memory1_id, memory2_id])
+            after_hebbian = client.get_memory_link_strength(memory1_id, memory2_id)
+            print(f"  After Hebbian learning: {after_hebbian:.3f}")
+            assert after_hebbian >= new_strength, "Hebbian learning should strengthen"
+
+            # Test decay
+            client.decay_weak_connections(threshold=1.0, decay_amount=0.1)
+            after_decay = client.get_memory_link_strength(memory1_id, memory2_id)
+            print(f"  After decay: {after_decay:.3f}")
+
+            # Test connection statistics
+            stats = client.get_connection_statistics()
+            print(f"  Connection stats: {stats['count']} connections, avg={stats['avg']:.3f}")
+
+            # Test preset configs
+            aggressive = PlasticityConfig.aggressive_learning()
+            conservative = PlasticityConfig.conservative_learning()
+            no_plasticity = PlasticityConfig.no_plasticity()
+            print(f"  Preset configs loaded: aggressive (lr={aggressive.learning_rate}), " +
+                  f"conservative (lr={conservative.learning_rate}), " +
+                  f"no_plasticity (lr={no_plasticity.learning_rate})")
+
+            # Test config serialization
+            config_dict = config.to_dict()
+            restored_config = PlasticityConfig.from_dict(config_dict)
+            assert restored_config.learning_rate == config.learning_rate
+            print("  Config serialization: OK")
+
+        return True
+    except Exception as e:
+        print(f"  Plasticity test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def cleanup_test_data():
     """Remove all test data from the database."""
     print("\nCleaning up test data...")
@@ -254,6 +336,7 @@ def main():
         results["memory"] = test_create_memory()
         results["relationships"] = test_relationships()
         results["goals_questions"] = test_goals_and_questions()
+        results["plasticity"] = test_plasticity_config()
         results["directory"] = test_directory_export()
 
     # Always cleanup

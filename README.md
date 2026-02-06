@@ -125,8 +125,65 @@ client.decay_weak_connections(threshold=0.3, decay_amount=0.05)
 client.prune_dead_connections(min_strength=0.01)
 
 # Find strongly associated memories
-strong = client.get_strong_associations(memory_id, min_strength=0.7)
+strong = client.get_strongest_connections(memory_id, limit=10)
+
+# Run maintenance cycle (decay + auto-prune)
+client.run_maintenance_cycle()
 ```
+
+### Tuneable Plasticity Configuration
+
+All plasticity behavior is configurable via `PlasticityConfig`:
+
+```python
+from memory_client import MemoryGraphClient, PlasticityConfig, DecayCurve
+
+# Create custom configuration
+config = PlasticityConfig(
+    # Learning rates
+    learning_rate=1.0,              # Global multiplier (0=disabled, >1=faster)
+
+    # Strengthening
+    base_strengthening_amount=0.1,  # Base amount per strengthen call
+    max_strength=1.0,               # Connection strength ceiling
+    strengthening_curve="diminishing",  # Harder to strengthen already-strong links
+
+    # Decay
+    decay_curve=DecayCurve.EXPONENTIAL,  # LINEAR, EXPONENTIAL, LOGARITHMIC, SIGMOID
+    base_decay_rate=0.05,           # Amount per decay cycle
+    decay_threshold=0.5,            # Only decay connections below this
+    decay_half_life=10,             # Cycles for strength to halve (exponential)
+
+    # Pruning
+    pruning_threshold=0.01,         # Remove connections at or below this
+    auto_prune=True,                # Prune during decay operations
+
+    # Retrieval effects (accessing memory changes it)
+    retrieval_strengthens=True,     # Accessing a memory strengthens its links
+    retrieval_strengthening_amount=0.02,
+    retrieval_weakens_competitors=False,  # Weaken related but not-accessed memories
+
+    # Hebbian learning
+    hebbian_learning_amount=0.05,   # Strengthen co-accessed memories
+    hebbian_creates_connections=True,  # Create links if none exist
+    hebbian_initial_strength=0.3,   # Initial strength for new links
+)
+
+# Use custom config
+client = MemoryGraphClient(plasticity_config=config)
+
+# Or use presets
+client = MemoryGraphClient(plasticity_config=PlasticityConfig.aggressive_learning())
+client = MemoryGraphClient(plasticity_config=PlasticityConfig.conservative_learning())
+client = MemoryGraphClient(plasticity_config=PlasticityConfig.no_plasticity())
+client = MemoryGraphClient(plasticity_config=PlasticityConfig.high_decay())
+
+# Save/load config
+client.save_plasticity_config("my_config.json")
+client.load_plasticity_config("my_config.json")
+```
+
+See [Plasticity Configuration Guide](docs/plasticity-config.md) for full parameter reference.
 
 ## Why KùzuDB?
 

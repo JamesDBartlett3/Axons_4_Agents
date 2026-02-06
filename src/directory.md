@@ -1,17 +1,17 @@
 # Memory Graph Directory
 
-Last updated: 2026-02-06T13:33:57.085985
+Last updated: 2026-02-06T13:53:16.713112
 
 ## Node Counts
 
-- **Concept**: 4
+- **Concept**: 5
 - **Context**: 0
 - **Contradiction**: 0
 - **Decision**: 0
 - **Entity**: 2
 - **Goal**: 1
-- **Keyword**: 6
-- **Memory**: 3
+- **Keyword**: 7
+- **Memory**: 5
 - **Preference**: 0
 - **Question**: 1
 - **Source**: 0
@@ -21,35 +21,37 @@ Last updated: 2026-02-06T13:33:57.085985
 
 ## Concepts
 
-- `3b108f83` **graph database**
-- `e0713c67` **data persistence**
-- `dfce5c5f` **cross-platform**
-- `f26335ba` **architecture**
+- `ed0414e8` **graph database**
+- `d22011ad` **data persistence**
+- `08dffe95` **cross-platform**
+- `406742b5` **architecture**
+- `3d4f2992` **testing**
 
 ## Topics
 
-- `7f51b449` **Technology Preferences**
-- `4794b79e` **Software Architecture**
-- `35a7157a` **Technology Decisions**
+- `817e1b28` **Technology Preferences**
+- `97423557` **Software Architecture**
+- `4c997b00` **Technology Decisions**
 
 ## Keywords
 
-- `8cb2efef` kuzu
-- `e21f6b04` embedded
-- `8fa099e4` simple
-- `c45f3586` memory system
-- `e68bfebe` pip install
-- `615dc3ef` comparison
+- `db4619ac` kuzu
+- `636f0f8e` embedded
+- `895a4a15` simple
+- `f0b7755c` memory system
+- `0dd34068` pip install
+- `286aabdf` comparison
+- `5a963490` plasticity
 
 ## Entities
 
-- `8d1d1375` **User** (person)
-- `82ec318c` **KùzuDB** (technology)
+- `86ee8caa` **User** (person)
+- `7247aabd` **KùzuDB** (technology)
 
 ## Goals
 
-- `835c3568` [active] Build a comprehensive memory system for AI agents
+- `3d764cbd` [active] Build a comprehensive memory system for AI agents
 
 ## Questions
 
-- `671c794e` [open] What additional node types might be useful for the
+- `8d4238cf` [open] What additional node types might be useful for the

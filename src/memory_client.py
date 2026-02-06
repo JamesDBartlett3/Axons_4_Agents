@@ -77,6 +77,21 @@ class ContradictionStatus(Enum):
     ACCEPTED = "accepted"
 
 
+class DecayCurve(Enum):
+    """Mathematical function for connection decay over time."""
+    LINEAR = "linear"           # Constant decay rate
+    EXPONENTIAL = "exponential" # Fast initial decay, slowing over time
+    LOGARITHMIC = "logarithmic" # Slow initial decay, accelerating over time
+    SIGMOID = "sigmoid"         # S-curve: slow start, fast middle, slow end
+
+
+class StrengtheningCurve(Enum):
+    """Mathematical function for connection strengthening."""
+    LINEAR = "linear"           # Constant strengthening rate
+    DIMINISHING = "diminishing" # Easier to strengthen weak connections
+    ACCELERATING = "accelerating" # Easier to strengthen strong connections
+
+
 # ============================================================================
 # DATA CLASSES
 # ============================================================================
@@ -204,19 +219,275 @@ class Contradiction:
 
 
 # ============================================================================
+# PLASTICITY CONFIGURATION
+# ============================================================================
+
+@dataclass
+class PlasticityConfig:
+    """
+    Configuration for brain-like plasticity behavior.
+
+    All parameters are tuneable to experiment with different memory dynamics.
+    Use PlasticityConfig.default() for sensible defaults, or customize as needed.
+
+    Example:
+        config = PlasticityConfig(
+            learning_rate=0.15,
+            decay_curve=DecayCurve.EXPONENTIAL,
+            retrieval_strengthens=True
+        )
+        client = MemoryGraphClient(plasticity_config=config)
+    """
+
+    # === LEARNING RATES ===
+    # Global multiplier for all plasticity operations (0.0 = no learning, 1.0 = normal, >1.0 = accelerated)
+    learning_rate: float = 1.0
+
+    # === STRENGTHENING PARAMETERS ===
+    # Base amount to strengthen connections (before learning_rate multiplier)
+    base_strengthening_amount: float = 0.1
+    # Maximum connection strength (ceiling)
+    max_strength: float = 1.0
+    # Minimum connection strength (floor, but still exists)
+    min_strength: float = 0.0
+    # Curve for strengthening (affects whether weak or strong connections strengthen faster)
+    strengthening_curve: StrengtheningCurve = StrengtheningCurve.LINEAR
+    # For DIMINISHING curve: how much harder it is to strengthen already-strong connections
+    # Higher = more diminishing returns (e.g., 2.0 means half as effective at strength 0.5)
+    diminishing_factor: float = 2.0
+
+    # === WEAKENING PARAMETERS ===
+    # Base amount to weaken connections (before learning_rate multiplier)
+    base_weakening_amount: float = 0.1
+    # Whether weakening uses the same curve as strengthening (inverted)
+    symmetric_curves: bool = True
+
+    # === HEBBIAN LEARNING ===
+    # Amount to strengthen when memories are co-accessed
+    hebbian_learning_amount: float = 0.05
+    # Whether to create new connections if none exist when co-accessed
+    hebbian_creates_connections: bool = True
+    # Initial strength for Hebbian-created connections
+    hebbian_initial_strength: float = 0.3
+
+    # === DECAY PARAMETERS ===
+    # Curve type for time-based decay
+    decay_curve: DecayCurve = DecayCurve.EXPONENTIAL
+    # Base decay rate per decay cycle
+    base_decay_rate: float = 0.05
+    # Connections below this threshold decay (those above are stable)
+    decay_threshold: float = 0.5
+    # Half-life in decay cycles (for exponential decay): cycles until strength halves
+    # Set to 0 to disable half-life-based decay
+    decay_half_life: int = 10
+    # Whether decay affects all connections or only weak ones
+    decay_affects_all: bool = False
+
+    # === PRUNING PARAMETERS ===
+    # Connections at or below this strength are candidates for pruning
+    pruning_threshold: float = 0.01
+    # Whether to auto-prune during decay operations
+    auto_prune: bool = True
+    # Grace period: minimum age (in access cycles) before a connection can be pruned
+    pruning_grace_period: int = 0
+
+    # === RETRIEVAL-INDUCED MODIFICATION ===
+    # Whether querying/accessing memories affects connections (like human recall)
+    retrieval_strengthens: bool = True
+    # Amount to strengthen accessed connections
+    retrieval_strengthening_amount: float = 0.02
+    # Whether retrieval weakens competing (non-accessed but related) memories
+    retrieval_weakens_competitors: bool = False
+    # Amount to weaken competing memories
+    competitor_weakening_amount: float = 0.01
+    # Hops away to consider as "competitors"
+    competitor_hops: int = 1
+
+    # === CONCEPT RELEVANCE ===
+    # Base amount to adjust concept relevance
+    concept_relevance_adjustment: float = 0.1
+    # Whether accessing a memory via concept search boosts that concept's relevance
+    access_boosts_concept_relevance: bool = True
+
+    # === GOAL/QUESTION SUPPORT ===
+    # Amount to strengthen memory-goal connections when goal is progressed
+    goal_progress_strengthening: float = 0.1
+    # Amount to strengthen memory-question connections when question is answered
+    question_answer_strengthening: float = 0.15
+
+    # === TIME-BASED PARAMETERS ===
+    # Whether to use real wall-clock time for decay (vs access-count based)
+    use_real_time_decay: bool = False
+    # If using real time, decay rate per hour
+    hourly_decay_rate: float = 0.001
+
+    # === CONNECTION TYPE WEIGHTS ===
+    # Multipliers for different relationship types (allows tuning per-type)
+    relationship_weights: Dict[str, float] = field(default_factory=lambda: {
+        "RELATES_TO": 1.0,
+        "HAS_CONCEPT": 1.0,
+        "HAS_KEYWORD": 1.0,
+        "BELONGS_TO": 1.0,
+        "MENTIONS": 1.0,
+        "SUPPORTS": 1.0,
+        "PARTIALLY_ANSWERS": 1.0,
+    })
+
+    @classmethod
+    def default(cls) -> "PlasticityConfig":
+        """Return default configuration with balanced settings."""
+        return cls()
+
+    @classmethod
+    def aggressive_learning(cls) -> "PlasticityConfig":
+        """Configuration for fast learning with quick adaptation."""
+        return cls(
+            learning_rate=1.5,
+            base_strengthening_amount=0.15,
+            hebbian_learning_amount=0.1,
+            retrieval_strengthens=True,
+            retrieval_strengthening_amount=0.05,
+            decay_threshold=0.3,
+        )
+
+    @classmethod
+    def conservative_learning(cls) -> "PlasticityConfig":
+        """Configuration for slow, stable learning."""
+        return cls(
+            learning_rate=0.5,
+            base_strengthening_amount=0.05,
+            hebbian_learning_amount=0.02,
+            retrieval_strengthens=True,
+            retrieval_strengthening_amount=0.01,
+            decay_threshold=0.7,
+            pruning_threshold=0.005,
+        )
+
+    @classmethod
+    def no_plasticity(cls) -> "PlasticityConfig":
+        """Configuration that disables all automatic plasticity (manual only)."""
+        return cls(
+            learning_rate=0.0,
+            retrieval_strengthens=False,
+            retrieval_weakens_competitors=False,
+            access_boosts_concept_relevance=False,
+            auto_prune=False,
+        )
+
+    @classmethod
+    def high_decay(cls) -> "PlasticityConfig":
+        """Configuration with aggressive forgetting (for memory pressure scenarios)."""
+        return cls(
+            base_decay_rate=0.1,
+            decay_threshold=0.7,
+            decay_affects_all=True,
+            pruning_threshold=0.05,
+            decay_half_life=5,
+        )
+
+    def effective_strengthening(self, base_amount: float = None, current_strength: float = 0.0) -> float:
+        """Calculate effective strengthening amount based on config and current strength."""
+        amount = base_amount if base_amount is not None else self.base_strengthening_amount
+        amount *= self.learning_rate
+
+        # Apply curve
+        if self.strengthening_curve == StrengtheningCurve.DIMINISHING:
+            # Harder to strengthen already-strong connections
+            # At strength 0, full effect. At strength 1, minimal effect.
+            factor = 1.0 - (current_strength ** (1.0 / self.diminishing_factor))
+            amount *= max(0.1, factor)  # Never reduce below 10%
+        elif self.strengthening_curve == StrengtheningCurve.ACCELERATING:
+            # Easier to strengthen already-strong connections
+            factor = 0.5 + (current_strength * 0.5)
+            amount *= factor
+
+        return amount
+
+    def effective_weakening(self, base_amount: float = None, current_strength: float = 1.0) -> float:
+        """Calculate effective weakening amount based on config and current strength."""
+        amount = base_amount if base_amount is not None else self.base_weakening_amount
+        amount *= self.learning_rate
+
+        if self.symmetric_curves:
+            # Inverse of strengthening curve
+            if self.strengthening_curve == StrengtheningCurve.DIMINISHING:
+                # Harder to weaken already-weak connections
+                factor = current_strength ** (1.0 / self.diminishing_factor)
+                amount *= max(0.1, factor)
+            elif self.strengthening_curve == StrengtheningCurve.ACCELERATING:
+                # Easier to weaken already-weak connections
+                factor = 1.0 - (current_strength * 0.5)
+                amount *= factor
+
+        return amount
+
+    def effective_decay(self, current_strength: float, cycles_since_access: int = 1) -> float:
+        """Calculate decay amount based on curve and time since last access."""
+        if current_strength > self.decay_threshold and not self.decay_affects_all:
+            return 0.0
+
+        base = self.base_decay_rate * self.learning_rate
+
+        if self.decay_curve == DecayCurve.LINEAR:
+            return base * cycles_since_access
+        elif self.decay_curve == DecayCurve.EXPONENTIAL:
+            if self.decay_half_life > 0:
+                # Exponential decay based on half-life
+                return current_strength * (1 - (0.5 ** (cycles_since_access / self.decay_half_life)))
+            else:
+                return base * (1.5 ** cycles_since_access - 1)
+        elif self.decay_curve == DecayCurve.LOGARITHMIC:
+            import math
+            return base * math.log1p(cycles_since_access)
+        elif self.decay_curve == DecayCurve.SIGMOID:
+            import math
+            # S-curve centered around half the decay threshold
+            midpoint = self.decay_threshold / 2
+            steepness = 5.0
+            sigmoid = 1 / (1 + math.exp(-steepness * (cycles_since_access - midpoint)))
+            return base * sigmoid * 2
+
+        return base
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to dictionary for serialization."""
+        result = {}
+        for key, value in self.__dict__.items():
+            if isinstance(value, Enum):
+                result[key] = value.value
+            elif isinstance(value, dict):
+                result[key] = value.copy()
+            else:
+                result[key] = value
+        return result
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PlasticityConfig":
+        """Create config from dictionary."""
+        # Convert enum strings back to enums
+        if "decay_curve" in data and isinstance(data["decay_curve"], str):
+            data["decay_curve"] = DecayCurve(data["decay_curve"])
+        if "strengthening_curve" in data and isinstance(data["strengthening_curve"], str):
+            data["strengthening_curve"] = StrengtheningCurve(data["strengthening_curve"])
+        return cls(**data)
+
+
+# ============================================================================
 # MEMORY GRAPH CLIENT
 # ============================================================================
 
 class MemoryGraphClient:
     """Client for interacting with the KùzuDB memory database."""
 
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str = None, plasticity_config: PlasticityConfig = None):
         """
         Initialize connection to KùzuDB.
 
         Args:
             db_path: Path to the database directory. If None, uses default location
                      in user's home directory (~/.axons_memory_db)
+            plasticity_config: Configuration for brain-like plasticity behavior.
+                              If None, uses PlasticityConfig.default()
         """
         if db_path is None:
             db_path = os.path.join(Path.home(), ".axons_memory_db")
@@ -225,6 +496,8 @@ class MemoryGraphClient:
         self.db = kuzu.Database(db_path)
         self.conn = kuzu.Connection(self.db)
         self._schema_initialized = False
+        self.plasticity = plasticity_config or PlasticityConfig.default()
+        self._access_cycle = 0  # Track access cycles for decay calculations
 
     def close(self):
         """Close the database connection."""
@@ -954,9 +1227,10 @@ class MemoryGraphClient:
 
     # ========================================================================
     # PLASTICITY OPERATIONS (Brain-like learning)
+    # All operations respect self.plasticity configuration
     # ========================================================================
 
-    def strengthen_memory_link(self, memory_id_1: str, memory_id_2: str, amount: float = 0.1):
+    def strengthen_memory_link(self, memory_id_1: str, memory_id_2: str, amount: float = None):
         """Strengthen the connection between two memories (Hebbian learning).
 
         This emulates synaptic potentiation - "neurons that fire together wire together".
@@ -965,19 +1239,30 @@ class MemoryGraphClient:
         Args:
             memory_id_1: First memory ID
             memory_id_2: Second memory ID
-            amount: How much to increase strength (0-1). Default 0.1
+            amount: Override for strengthening amount. If None, uses config.
         """
+        # Get current strength to apply curve
+        current = self.get_memory_link_strength(memory_id_1, memory_id_2) or 0.0
+        effective_amount = self.plasticity.effective_strengthening(amount, current)
+
+        if effective_amount <= 0:
+            return
+
+        max_strength = self.plasticity.max_strength
         query = """
         MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
         WHERE m1.id = $id1 AND m2.id = $id2
         SET r.strength = CASE
-            WHEN r.strength + $amount > 1.0 THEN 1.0
+            WHEN r.strength + $amount > $max THEN $max
             ELSE r.strength + $amount
         END
         """
-        self._run_write(query, {"id1": memory_id_1, "id2": memory_id_2, "amount": amount})
+        self._run_write(query, {
+            "id1": memory_id_1, "id2": memory_id_2,
+            "amount": effective_amount, "max": max_strength
+        })
 
-    def weaken_memory_link(self, memory_id_1: str, memory_id_2: str, amount: float = 0.1):
+    def weaken_memory_link(self, memory_id_1: str, memory_id_2: str, amount: float = None):
         """Weaken the connection between two memories.
 
         This emulates synaptic depression - connections weaken when not reinforced.
@@ -985,29 +1270,64 @@ class MemoryGraphClient:
         Args:
             memory_id_1: First memory ID
             memory_id_2: Second memory ID
-            amount: How much to decrease strength (0-1). Default 0.1
+            amount: Override for weakening amount. If None, uses config.
         """
+        # Get current strength to apply curve
+        current = self.get_memory_link_strength(memory_id_1, memory_id_2) or 1.0
+        effective_amount = self.plasticity.effective_weakening(amount, current)
+
+        if effective_amount <= 0:
+            return
+
+        min_strength = self.plasticity.min_strength
         query = """
         MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
         WHERE m1.id = $id1 AND m2.id = $id2
         SET r.strength = CASE
-            WHEN r.strength - $amount < 0.0 THEN 0.0
+            WHEN r.strength - $amount < $min THEN $min
             ELSE r.strength - $amount
         END
         """
-        self._run_write(query, {"id1": memory_id_1, "id2": memory_id_2, "amount": amount})
+        self._run_write(query, {
+            "id1": memory_id_1, "id2": memory_id_2,
+            "amount": effective_amount, "min": min_strength
+        })
 
-    def strengthen_concept_relevance(self, memory_id: str, concept_id: str, amount: float = 0.1):
+    def strengthen_concept_relevance(self, memory_id: str, concept_id: str, amount: float = None):
         """Increase the relevance of a concept to a memory.
 
         Use when a concept proves particularly useful for retrieving this memory.
         """
+        if amount is None:
+            amount = self.plasticity.concept_relevance_adjustment * self.plasticity.learning_rate
+
+        if amount <= 0:
+            return
+
         query = """
         MATCH (m:Memory)-[r:HAS_CONCEPT]->(c:Concept)
         WHERE m.id = $memory_id AND c.id = $concept_id
         SET r.relevance = CASE
             WHEN r.relevance + $amount > 1.0 THEN 1.0
             ELSE r.relevance + $amount
+        END
+        """
+        self._run_write(query, {"memory_id": memory_id, "concept_id": concept_id, "amount": amount})
+
+    def weaken_concept_relevance(self, memory_id: str, concept_id: str, amount: float = None):
+        """Decrease the relevance of a concept to a memory."""
+        if amount is None:
+            amount = self.plasticity.concept_relevance_adjustment * self.plasticity.learning_rate
+
+        if amount <= 0:
+            return
+
+        query = """
+        MATCH (m:Memory)-[r:HAS_CONCEPT]->(c:Concept)
+        WHERE m.id = $memory_id AND c.id = $concept_id
+        SET r.relevance = CASE
+            WHEN r.relevance - $amount < 0.0 THEN 0.0
+            ELSE r.relevance - $amount
         END
         """
         self._run_write(query, {"memory_id": memory_id, "concept_id": concept_id, "amount": amount})
@@ -1022,49 +1342,93 @@ class MemoryGraphClient:
         result = self._run_query(query, {"id1": memory_id_1, "id2": memory_id_2})
         return result[0]["strength"] if result else None
 
-    def apply_hebbian_learning(self, memory_ids: List[str], amount: float = 0.05):
+    def apply_hebbian_learning(self, memory_ids: List[str], amount: float = None):
         """Strengthen connections between all memories accessed together.
 
         When multiple memories are retrieved in the same context, strengthen
         all pairwise connections. This implements "neurons that fire together
         wire together".
 
+        If plasticity.hebbian_creates_connections is True, creates new connections
+        between memories that aren't already linked.
+
         Args:
             memory_ids: List of memory IDs that were accessed together
-            amount: How much to strengthen each connection
+            amount: Override for strengthening amount. If None, uses config.
         """
+        if amount is None:
+            amount = self.plasticity.hebbian_learning_amount
+
         # Strengthen all pairwise connections
         for i, id1 in enumerate(memory_ids):
             for id2 in memory_ids[i+1:]:
-                self.strengthen_memory_link(id1, id2, amount)
-                self.strengthen_memory_link(id2, id1, amount)
+                # Check if connection exists
+                strength = self.get_memory_link_strength(id1, id2)
+                if strength is None and self.plasticity.hebbian_creates_connections:
+                    # Create new connection with initial strength
+                    self.link_memories(id1, id2, self.plasticity.hebbian_initial_strength, "hebbian")
+                    self.link_memories(id2, id1, self.plasticity.hebbian_initial_strength, "hebbian")
+                else:
+                    self.strengthen_memory_link(id1, id2, amount)
+                    self.strengthen_memory_link(id2, id1, amount)
 
-    def decay_weak_connections(self, threshold: float = 0.1, decay_amount: float = 0.05):
-        """Weaken connections that are already weak (pruning).
+    def decay_weak_connections(self, threshold: float = None, decay_amount: float = None):
+        """Weaken connections that are below threshold.
 
-        This emulates synaptic pruning - weak connections that aren't reinforced
-        eventually disappear. Connections below threshold are weakened further.
+        This emulates synaptic decay - connections that aren't reinforced
+        eventually weaken. Controlled by decay_curve in config.
 
         Args:
-            threshold: Connections below this strength are decayed
-            decay_amount: How much to reduce strength
+            threshold: Override for decay threshold. If None, uses config.
+            decay_amount: Override for decay amount. If None, uses config.
         """
-        query = """
-        MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
-        WHERE r.strength < $threshold
-        SET r.strength = CASE
-            WHEN r.strength - $decay_amount < 0.0 THEN 0.0
-            ELSE r.strength - $decay_amount
-        END
-        """
-        self._run_write(query, {"threshold": threshold, "decay_amount": decay_amount})
+        if threshold is None:
+            threshold = self.plasticity.decay_threshold
+        if decay_amount is None:
+            decay_amount = self.plasticity.base_decay_rate * self.plasticity.learning_rate
 
-    def prune_dead_connections(self, min_strength: float = 0.01):
+        if decay_amount <= 0:
+            return
+
+        min_strength = self.plasticity.min_strength
+
+        if self.plasticity.decay_affects_all:
+            # Decay all connections
+            query = """
+            MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
+            SET r.strength = CASE
+                WHEN r.strength - $decay_amount < $min THEN $min
+                ELSE r.strength - $decay_amount
+            END
+            """
+            self._run_write(query, {"decay_amount": decay_amount, "min": min_strength})
+        else:
+            # Only decay connections below threshold
+            query = """
+            MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
+            WHERE r.strength < $threshold
+            SET r.strength = CASE
+                WHEN r.strength - $decay_amount < $min THEN $min
+                ELSE r.strength - $decay_amount
+            END
+            """
+            self._run_write(query, {
+                "threshold": threshold, "decay_amount": decay_amount, "min": min_strength
+            })
+
+        # Auto-prune if enabled
+        if self.plasticity.auto_prune:
+            self.prune_dead_connections()
+
+    def prune_dead_connections(self, min_strength: float = None):
         """Remove connections that have decayed to near-zero.
 
         Args:
-            min_strength: Connections at or below this strength are deleted
+            min_strength: Override for pruning threshold. If None, uses config.
         """
+        if min_strength is None:
+            min_strength = self.plasticity.pruning_threshold
+
         query = """
         MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
         WHERE r.strength <= $min_strength
@@ -1086,12 +1450,227 @@ class MemoryGraphClient:
         """
         return self._run_query(query, {"memory_id": memory_id, "limit": limit})
 
+    def get_weakest_connections(self, memory_id: str, limit: int = 10) -> List[Dict]:
+        """Get the weakest connections from a memory (candidates for pruning).
+
+        Returns memories sorted by connection strength, lowest first.
+        """
+        query = """
+        MATCH (m:Memory)-[r:RELATES_TO]->(related:Memory)
+        WHERE m.id = $memory_id
+        RETURN related.id AS id, related.summary AS summary, r.strength AS strength
+        ORDER BY r.strength ASC
+        LIMIT $limit
+        """
+        return self._run_query(query, {"memory_id": memory_id, "limit": limit})
+
+    def get_all_connection_strengths(self) -> List[Dict]:
+        """Get all memory-to-memory connections with their strengths.
+
+        Useful for analyzing the overall connection distribution.
+        """
+        query = """
+        MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
+        RETURN m1.id AS from_id, m2.id AS to_id, r.strength AS strength
+        ORDER BY r.strength DESC
+        """
+        return self._run_query(query, {})
+
+    def get_connection_statistics(self) -> Dict[str, Any]:
+        """Get statistics about all connections in the graph.
+
+        Returns dict with count, min, max, avg, and distribution buckets.
+        """
+        connections = self.get_all_connection_strengths()
+        if not connections:
+            return {
+                "count": 0, "min": None, "max": None, "avg": None,
+                "buckets": {}, "below_threshold": 0
+            }
+
+        strengths = [c["strength"] for c in connections]
+        threshold = self.plasticity.decay_threshold
+
+        # Create distribution buckets (0-0.1, 0.1-0.2, etc.)
+        buckets = {f"{i/10:.1f}-{(i+1)/10:.1f}": 0 for i in range(10)}
+        for s in strengths:
+            bucket_idx = min(int(s * 10), 9)
+            bucket_key = f"{bucket_idx/10:.1f}-{(bucket_idx+1)/10:.1f}"
+            buckets[bucket_key] += 1
+
+        return {
+            "count": len(strengths),
+            "min": min(strengths),
+            "max": max(strengths),
+            "avg": sum(strengths) / len(strengths),
+            "buckets": buckets,
+            "below_threshold": sum(1 for s in strengths if s < threshold),
+            "pruning_candidates": sum(1 for s in strengths if s <= self.plasticity.pruning_threshold),
+        }
+
+    # === RETRIEVAL-INDUCED MODIFICATION ===
+
+    def _apply_retrieval_effects(self, memory_id: str, via_concept_id: str = None):
+        """Apply retrieval-induced modifications when a memory is accessed.
+
+        This emulates how human memory recall actually modifies the memory:
+        - Strengthens the accessed memory's connections
+        - Optionally weakens competing (related but not accessed) memories
+        - Boosts concept relevance if accessed via concept search
+
+        Called automatically by get_memory() if retrieval_strengthens is enabled.
+        """
+        if not self.plasticity.retrieval_strengthens:
+            return
+
+        # Strengthen connections TO this memory (it was useful enough to retrieve)
+        amount = self.plasticity.retrieval_strengthening_amount * self.plasticity.learning_rate
+        if amount > 0:
+            query = """
+            MATCH (other:Memory)-[r:RELATES_TO]->(m:Memory {id: $id})
+            SET r.strength = CASE
+                WHEN r.strength + $amount > $max THEN $max
+                ELSE r.strength + $amount
+            END
+            """
+            self._run_write(query, {
+                "id": memory_id, "amount": amount, "max": self.plasticity.max_strength
+            })
+
+        # Boost concept relevance if accessed via concept
+        if via_concept_id and self.plasticity.access_boosts_concept_relevance:
+            self.strengthen_concept_relevance(memory_id, via_concept_id)
+
+        # Weaken competitors if enabled
+        if self.plasticity.retrieval_weakens_competitors:
+            self._weaken_competitors(memory_id)
+
+    def _weaken_competitors(self, accessed_memory_id: str):
+        """Weaken memories that are related to but weren't accessed.
+
+        This implements retrieval-induced forgetting - accessing one memory
+        can make related memories harder to recall.
+        """
+        amount = self.plasticity.competitor_weakening_amount * self.plasticity.learning_rate
+        if amount <= 0:
+            return
+
+        # Find memories connected to the accessed memory (competitors)
+        # and weaken their OTHER connections (not the one to accessed memory)
+        query = """
+        MATCH (accessed:Memory {id: $id})-[:RELATES_TO]-(competitor:Memory)
+        MATCH (competitor)-[r:RELATES_TO]-(other:Memory)
+        WHERE other.id <> $id
+        SET r.strength = CASE
+            WHEN r.strength - $amount < $min THEN $min
+            ELSE r.strength - $amount
+        END
+        """
+        self._run_write(query, {
+            "id": accessed_memory_id,
+            "amount": amount,
+            "min": self.plasticity.min_strength
+        })
+
+    # === MAINTENANCE OPERATIONS ===
+
+    def run_maintenance_cycle(self):
+        """Run a full maintenance cycle: decay, prune, update statistics.
+
+        Call this periodically (e.g., at session end) to simulate time passing.
+        Increments the internal access cycle counter.
+        """
+        self._access_cycle += 1
+        self.decay_weak_connections()
+        # Auto-prune is handled by decay_weak_connections if enabled
+
+    def run_aggressive_maintenance(self, cycles: int = 5):
+        """Run multiple maintenance cycles to aggressively prune weak connections.
+
+        Useful for memory pressure situations or cleanup.
+
+        Args:
+            cycles: Number of decay cycles to run
+        """
+        for _ in range(cycles):
+            self.run_maintenance_cycle()
+
+    def strengthen_goal_connections(self, goal_id: str, amount: float = None):
+        """Strengthen all memory connections to a goal (goal progress).
+
+        Call when a goal is progressed or achieved.
+        """
+        if amount is None:
+            amount = self.plasticity.goal_progress_strengthening * self.plasticity.learning_rate
+
+        if amount <= 0:
+            return
+
+        query = """
+        MATCH (m:Memory)-[r:SUPPORTS]->(g:Goal {id: $goal_id})
+        SET r.strength = CASE
+            WHEN r.strength + $amount > 1.0 THEN 1.0
+            ELSE r.strength + $amount
+        END
+        """
+        self._run_write(query, {"goal_id": goal_id, "amount": amount})
+
+    def strengthen_question_connections(self, question_id: str, amount: float = None):
+        """Strengthen all memory connections to a question.
+
+        Call when a question is answered or progressed.
+        """
+        if amount is None:
+            amount = self.plasticity.question_answer_strengthening * self.plasticity.learning_rate
+
+        if amount <= 0:
+            return
+
+        query = """
+        MATCH (m:Memory)-[r:PARTIALLY_ANSWERS]->(q:Question {id: $question_id})
+        SET r.completeness = CASE
+            WHEN r.completeness + $amount > 1.0 THEN 1.0
+            ELSE r.completeness + $amount
+        END
+        """
+        self._run_write(query, {"question_id": question_id, "amount": amount})
+
+    # === CONFIGURATION MANAGEMENT ===
+
+    def get_plasticity_config(self) -> PlasticityConfig:
+        """Get the current plasticity configuration."""
+        return self.plasticity
+
+    def set_plasticity_config(self, config: PlasticityConfig):
+        """Update the plasticity configuration."""
+        self.plasticity = config
+
+    def save_plasticity_config(self, filepath: str):
+        """Save plasticity config to a JSON file."""
+        import json
+        with open(filepath, 'w') as f:
+            json.dump(self.plasticity.to_dict(), f, indent=2)
+
+    def load_plasticity_config(self, filepath: str):
+        """Load plasticity config from a JSON file."""
+        import json
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+        self.plasticity = PlasticityConfig.from_dict(data)
+
     # ========================================================================
     # QUERY OPERATIONS
     # ========================================================================
 
-    def get_memory(self, memory_id: str) -> Optional[Dict]:
-        """Get a memory by ID and update access tracking."""
+    def get_memory(self, memory_id: str, apply_retrieval_effects: bool = True) -> Optional[Dict]:
+        """Get a memory by ID and update access tracking.
+
+        Args:
+            memory_id: The memory's unique identifier
+            apply_retrieval_effects: If True (default), applies retrieval-induced
+                                    modifications based on plasticity config.
+                                    Set to False for read-only access.
+        """
         # First update access tracking
         update_query = """
         MATCH (m:Memory {id: $id})
@@ -1107,6 +1686,11 @@ class MemoryGraphClient:
                m.accessCount AS accessCount, m.confidence AS confidence
         """
         result = self._run_query(query, {"id": memory_id})
+
+        if result and apply_retrieval_effects:
+            # Apply retrieval-induced modifications (like human recall changing memory)
+            self._apply_retrieval_effects(memory_id)
+
         return result[0] if result else None
 
     def search_memories(self, search_term: str, limit: int = 10) -> List[Dict]:
@@ -1157,8 +1741,23 @@ class MemoryGraphClient:
 
         return results[:limit]
 
-    def get_memories_by_concept(self, concept_name: str, limit: int = 20) -> List[Dict]:
-        """Get all memories associated with a concept."""
+    def get_memories_by_concept(self, concept_name: str, limit: int = 20,
+                                 apply_retrieval_effects: bool = True) -> List[Dict]:
+        """Get all memories associated with a concept.
+
+        Args:
+            concept_name: Name of the concept to search for
+            limit: Maximum number of results
+            apply_retrieval_effects: If True, boosts concept relevance for returned memories
+        """
+        # First get the concept ID for retrieval effects
+        concept_query = """
+        MATCH (c:Concept {name: $name})
+        RETURN c.id AS id
+        """
+        concept_result = self._run_query(concept_query, {"name": concept_name})
+        concept_id = concept_result[0]["id"] if concept_result else None
+
         query = """
         MATCH (m:Memory)-[:HAS_CONCEPT]->(c:Concept {name: $name})
         RETURN m.id AS id, m.content AS content, m.summary AS summary,
@@ -1167,7 +1766,14 @@ class MemoryGraphClient:
         ORDER BY m.lastAccessed DESC
         LIMIT $limit
         """
-        return self._run_query(query, {"name": concept_name, "limit": limit})
+        results = self._run_query(query, {"name": concept_name, "limit": limit})
+
+        # Apply retrieval effects - accessing via concept boosts that concept's relevance
+        if apply_retrieval_effects and concept_id and self.plasticity.access_boosts_concept_relevance:
+            for mem in results:
+                self._apply_retrieval_effects(mem["id"], via_concept_id=concept_id)
+
+        return results
 
     def get_memories_by_keyword(self, keyword: str, limit: int = 20) -> List[Dict]:
         """Get all memories associated with a keyword."""
