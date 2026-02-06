@@ -383,26 +383,30 @@ class MemoryGraphClient:
             )"""
         ]
 
-        # Create relationship tables
-        # Note: KùzuDB has limited support for relationship properties in Cypher syntax,
-        # so we keep relationships simple for cross-platform compatibility
+        # Create relationship tables with properties for brain-like plasticity
+        # Edge weights enable Hebbian learning, decay, and relevance-based retrieval
         rel_tables = [
-            "CREATE REL TABLE IF NOT EXISTS HAS_CONCEPT (FROM Memory TO Concept)",
+            # Memory associations with strength/relevance weights
+            "CREATE REL TABLE IF NOT EXISTS HAS_CONCEPT (FROM Memory TO Concept, relevance DOUBLE)",
             "CREATE REL TABLE IF NOT EXISTS HAS_KEYWORD (FROM Memory TO Keyword)",
-            "CREATE REL TABLE IF NOT EXISTS BELONGS_TO (FROM Memory TO Topic)",
-            "CREATE REL TABLE IF NOT EXISTS MENTIONS (FROM Memory TO Entity)",
-            "CREATE REL TABLE IF NOT EXISTS FROM_SOURCE (FROM Memory TO Source)",
+            "CREATE REL TABLE IF NOT EXISTS BELONGS_TO (FROM Memory TO Topic, isPrimary BOOLEAN)",
+            "CREATE REL TABLE IF NOT EXISTS MENTIONS (FROM Memory TO Entity, role STRING)",
+            "CREATE REL TABLE IF NOT EXISTS FROM_SOURCE (FROM Memory TO Source, excerpt STRING)",
             "CREATE REL TABLE IF NOT EXISTS IN_CONTEXT (FROM Memory TO Context)",
             "CREATE REL TABLE IF NOT EXISTS INFORMED (FROM Memory TO Decision)",
-            "CREATE REL TABLE IF NOT EXISTS PARTIALLY_ANSWERS (FROM Memory TO Question)",
-            "CREATE REL TABLE IF NOT EXISTS SUPPORTS (FROM Memory TO Goal)",
+            "CREATE REL TABLE IF NOT EXISTS PARTIALLY_ANSWERS (FROM Memory TO Question, completeness DOUBLE)",
+            "CREATE REL TABLE IF NOT EXISTS SUPPORTS (FROM Memory TO Goal, strength DOUBLE)",
             "CREATE REL TABLE IF NOT EXISTS REVEALS (FROM Memory TO Preference)",
             "CREATE REL TABLE IF NOT EXISTS OCCURRED_DURING (FROM Memory TO TemporalMarker)",
-            "CREATE REL TABLE IF NOT EXISTS RELATES_TO (FROM Memory TO Memory)",
-            "CREATE REL TABLE IF NOT EXISTS CONCEPT_RELATED_TO (FROM Concept TO Concept)",
+            # Memory-to-memory with synaptic-like strength
+            "CREATE REL TABLE IF NOT EXISTS RELATES_TO (FROM Memory TO Memory, strength DOUBLE, relType STRING)",
+            # Concept relationships
+            "CREATE REL TABLE IF NOT EXISTS CONCEPT_RELATED_TO (FROM Concept TO Concept, relType STRING)",
+            # Goal/Decision/Context hierarchies
             "CREATE REL TABLE IF NOT EXISTS DEPENDS_ON (FROM Goal TO Goal)",
             "CREATE REL TABLE IF NOT EXISTS LED_TO (FROM Decision TO Decision)",
             "CREATE REL TABLE IF NOT EXISTS PART_OF (FROM Context TO Context)",
+            # Contradiction tracking
             "CREATE REL TABLE IF NOT EXISTS CONFLICTS_WITH (FROM Contradiction TO Memory)",
             "CREATE REL TABLE IF NOT EXISTS SUPERSEDES (FROM Contradiction TO Memory)"
         ]
@@ -760,13 +764,16 @@ class MemoryGraphClient:
     # ========================================================================
 
     def link_memory_to_concept(self, memory_id: str, concept_id: str, relevance: float = 1.0):
-        """Link a memory to a concept."""
+        """Link a memory to a concept with relevance weight (0-1).
+
+        Higher relevance = stronger association (like synaptic strength).
+        """
         query = """
         MATCH (m:Memory), (c:Concept)
         WHERE m.id = $memory_id AND c.id = $concept_id
-        CREATE (m)-[:HAS_CONCEPT]->(c)
+        CREATE (m)-[:HAS_CONCEPT {relevance: $relevance}]->(c)
         """
-        self._run_write(query, {"memory_id": memory_id, "concept_id": concept_id})
+        self._run_write(query, {"memory_id": memory_id, "concept_id": concept_id, "relevance": relevance})
 
     def link_memory_to_keyword(self, memory_id: str, keyword_id: str):
         """Link a memory to a keyword."""
@@ -778,31 +785,31 @@ class MemoryGraphClient:
         self._run_write(query, {"memory_id": memory_id, "keyword_id": keyword_id})
 
     def link_memory_to_topic(self, memory_id: str, topic_id: str, primary: bool = False):
-        """Link a memory to a topic."""
+        """Link a memory to a topic, optionally marking it as the primary topic."""
         query = """
         MATCH (m:Memory), (t:Topic)
         WHERE m.id = $memory_id AND t.id = $topic_id
-        CREATE (m)-[:BELONGS_TO]->(t)
+        CREATE (m)-[:BELONGS_TO {isPrimary: $is_primary}]->(t)
         """
-        self._run_write(query, {"memory_id": memory_id, "topic_id": topic_id})
+        self._run_write(query, {"memory_id": memory_id, "topic_id": topic_id, "is_primary": primary})
 
     def link_memory_to_entity(self, memory_id: str, entity_id: str, role: str = ""):
-        """Link a memory to an entity."""
+        """Link a memory to an entity with an optional role description."""
         query = """
         MATCH (m:Memory), (e:Entity)
         WHERE m.id = $memory_id AND e.id = $entity_id
-        CREATE (m)-[:MENTIONS]->(e)
+        CREATE (m)-[:MENTIONS {role: $role}]->(e)
         """
-        self._run_write(query, {"memory_id": memory_id, "entity_id": entity_id})
+        self._run_write(query, {"memory_id": memory_id, "entity_id": entity_id, "role": role})
 
     def link_memory_to_source(self, memory_id: str, source_id: str, excerpt: str = ""):
-        """Link a memory to its source."""
+        """Link a memory to its source with an optional excerpt."""
         query = """
         MATCH (m:Memory), (s:Source)
         WHERE m.id = $memory_id AND s.id = $source_id
-        CREATE (m)-[:FROM_SOURCE]->(s)
+        CREATE (m)-[:FROM_SOURCE {excerpt: $excerpt}]->(s)
         """
-        self._run_write(query, {"memory_id": memory_id, "source_id": source_id})
+        self._run_write(query, {"memory_id": memory_id, "source_id": source_id, "excerpt": excerpt})
 
     def link_memory_to_context(self, memory_id: str, context_id: str):
         """Link a memory to a context."""
@@ -823,22 +830,28 @@ class MemoryGraphClient:
         self._run_write(query, {"memory_id": memory_id, "decision_id": decision_id})
 
     def link_memory_to_question(self, memory_id: str, question_id: str, completeness: float = 0.5):
-        """Link a memory that partially answers a question."""
+        """Link a memory that partially answers a question.
+
+        Completeness (0-1) indicates how much the memory answers the question.
+        """
         query = """
         MATCH (m:Memory), (q:Question)
         WHERE m.id = $memory_id AND q.id = $question_id
-        CREATE (m)-[:PARTIALLY_ANSWERS]->(q)
+        CREATE (m)-[:PARTIALLY_ANSWERS {completeness: $completeness}]->(q)
         """
-        self._run_write(query, {"memory_id": memory_id, "question_id": question_id})
+        self._run_write(query, {"memory_id": memory_id, "question_id": question_id, "completeness": completeness})
 
     def link_memory_to_goal(self, memory_id: str, goal_id: str, strength: float = 0.5):
-        """Link a memory that supports a goal."""
+        """Link a memory that supports a goal.
+
+        Strength (0-1) indicates how strongly the memory supports the goal.
+        """
         query = """
         MATCH (m:Memory), (g:Goal)
         WHERE m.id = $memory_id AND g.id = $goal_id
-        CREATE (m)-[:SUPPORTS]->(g)
+        CREATE (m)-[:SUPPORTS {strength: $strength}]->(g)
         """
-        self._run_write(query, {"memory_id": memory_id, "goal_id": goal_id})
+        self._run_write(query, {"memory_id": memory_id, "goal_id": goal_id, "strength": strength})
 
     def link_memory_to_preference(self, memory_id: str, preference_id: str):
         """Link a memory that reveals a preference."""
@@ -859,22 +872,27 @@ class MemoryGraphClient:
         self._run_write(query, {"memory_id": memory_id, "temporal_id": temporal_id})
 
     def link_memories(self, memory_id_1: str, memory_id_2: str, strength: float = 0.5, rel_type: str = ""):
-        """Link two related memories."""
+        """Link two related memories with a synaptic-like strength.
+
+        Strength (0-1) represents the connection weight - can be increased
+        when memories are accessed together (Hebbian learning) or decreased
+        over time (decay).
+        """
         query = """
         MATCH (m1:Memory), (m2:Memory)
         WHERE m1.id = $id1 AND m2.id = $id2
-        CREATE (m1)-[:RELATES_TO]->(m2)
+        CREATE (m1)-[:RELATES_TO {strength: $strength, relType: $relType}]->(m2)
         """
-        self._run_write(query, {"id1": memory_id_1, "id2": memory_id_2})
+        self._run_write(query, {"id1": memory_id_1, "id2": memory_id_2, "strength": strength, "relType": rel_type})
 
     def link_concepts(self, concept_id_1: str, concept_id_2: str, rel_type: str = ""):
         """Link two related concepts."""
         query = """
         MATCH (c1:Concept), (c2:Concept)
         WHERE c1.id = $id1 AND c2.id = $id2
-        CREATE (c1)-[:CONCEPT_RELATED_TO]->(c2)
+        CREATE (c1)-[:CONCEPT_RELATED_TO {relType: $relType}]->(c2)
         """
-        self._run_write(query, {"id1": concept_id_1, "id2": concept_id_2})
+        self._run_write(query, {"id1": concept_id_1, "id2": concept_id_2, "relType": rel_type})
 
     def link_goals(self, goal_id_1: str, goal_id_2: str):
         """Link a goal that depends on another."""
@@ -933,6 +951,140 @@ class MemoryGraphClient:
         CREATE (c)-[:SUPERSEDES]->(m)
         """
         self._run_write(query2, {"cid": contradiction_id, "mid": superseding_memory_id})
+
+    # ========================================================================
+    # PLASTICITY OPERATIONS (Brain-like learning)
+    # ========================================================================
+
+    def strengthen_memory_link(self, memory_id_1: str, memory_id_2: str, amount: float = 0.1):
+        """Strengthen the connection between two memories (Hebbian learning).
+
+        This emulates synaptic potentiation - "neurons that fire together wire together".
+        Call this when two memories are accessed/recalled together.
+
+        Args:
+            memory_id_1: First memory ID
+            memory_id_2: Second memory ID
+            amount: How much to increase strength (0-1). Default 0.1
+        """
+        query = """
+        MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
+        WHERE m1.id = $id1 AND m2.id = $id2
+        SET r.strength = CASE
+            WHEN r.strength + $amount > 1.0 THEN 1.0
+            ELSE r.strength + $amount
+        END
+        """
+        self._run_write(query, {"id1": memory_id_1, "id2": memory_id_2, "amount": amount})
+
+    def weaken_memory_link(self, memory_id_1: str, memory_id_2: str, amount: float = 0.1):
+        """Weaken the connection between two memories.
+
+        This emulates synaptic depression - connections weaken when not reinforced.
+
+        Args:
+            memory_id_1: First memory ID
+            memory_id_2: Second memory ID
+            amount: How much to decrease strength (0-1). Default 0.1
+        """
+        query = """
+        MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
+        WHERE m1.id = $id1 AND m2.id = $id2
+        SET r.strength = CASE
+            WHEN r.strength - $amount < 0.0 THEN 0.0
+            ELSE r.strength - $amount
+        END
+        """
+        self._run_write(query, {"id1": memory_id_1, "id2": memory_id_2, "amount": amount})
+
+    def strengthen_concept_relevance(self, memory_id: str, concept_id: str, amount: float = 0.1):
+        """Increase the relevance of a concept to a memory.
+
+        Use when a concept proves particularly useful for retrieving this memory.
+        """
+        query = """
+        MATCH (m:Memory)-[r:HAS_CONCEPT]->(c:Concept)
+        WHERE m.id = $memory_id AND c.id = $concept_id
+        SET r.relevance = CASE
+            WHEN r.relevance + $amount > 1.0 THEN 1.0
+            ELSE r.relevance + $amount
+        END
+        """
+        self._run_write(query, {"memory_id": memory_id, "concept_id": concept_id, "amount": amount})
+
+    def get_memory_link_strength(self, memory_id_1: str, memory_id_2: str) -> Optional[float]:
+        """Get the current connection strength between two memories."""
+        query = """
+        MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
+        WHERE m1.id = $id1 AND m2.id = $id2
+        RETURN r.strength AS strength
+        """
+        result = self._run_query(query, {"id1": memory_id_1, "id2": memory_id_2})
+        return result[0]["strength"] if result else None
+
+    def apply_hebbian_learning(self, memory_ids: List[str], amount: float = 0.05):
+        """Strengthen connections between all memories accessed together.
+
+        When multiple memories are retrieved in the same context, strengthen
+        all pairwise connections. This implements "neurons that fire together
+        wire together".
+
+        Args:
+            memory_ids: List of memory IDs that were accessed together
+            amount: How much to strengthen each connection
+        """
+        # Strengthen all pairwise connections
+        for i, id1 in enumerate(memory_ids):
+            for id2 in memory_ids[i+1:]:
+                self.strengthen_memory_link(id1, id2, amount)
+                self.strengthen_memory_link(id2, id1, amount)
+
+    def decay_weak_connections(self, threshold: float = 0.1, decay_amount: float = 0.05):
+        """Weaken connections that are already weak (pruning).
+
+        This emulates synaptic pruning - weak connections that aren't reinforced
+        eventually disappear. Connections below threshold are weakened further.
+
+        Args:
+            threshold: Connections below this strength are decayed
+            decay_amount: How much to reduce strength
+        """
+        query = """
+        MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
+        WHERE r.strength < $threshold
+        SET r.strength = CASE
+            WHEN r.strength - $decay_amount < 0.0 THEN 0.0
+            ELSE r.strength - $decay_amount
+        END
+        """
+        self._run_write(query, {"threshold": threshold, "decay_amount": decay_amount})
+
+    def prune_dead_connections(self, min_strength: float = 0.01):
+        """Remove connections that have decayed to near-zero.
+
+        Args:
+            min_strength: Connections at or below this strength are deleted
+        """
+        query = """
+        MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
+        WHERE r.strength <= $min_strength
+        DELETE r
+        """
+        self._run_write(query, {"min_strength": min_strength})
+
+    def get_strongest_connections(self, memory_id: str, limit: int = 10) -> List[Dict]:
+        """Get the strongest connections from a memory (most relevant associations).
+
+        Returns memories sorted by connection strength, highest first.
+        """
+        query = """
+        MATCH (m:Memory)-[r:RELATES_TO]->(related:Memory)
+        WHERE m.id = $memory_id
+        RETURN related.id AS id, related.summary AS summary, r.strength AS strength
+        ORDER BY r.strength DESC
+        LIMIT $limit
+        """
+        return self._run_query(query, {"memory_id": memory_id, "limit": limit})
 
     # ========================================================================
     # QUERY OPERATIONS
