@@ -1,9 +1,15 @@
 """
 Test script for the Memory Graph System.
-Verifies connection to Memgraph and tests basic operations.
+Verifies connection to KùzuDB and tests basic operations.
+
+Cross-platform compatible: Works on Windows, macOS, and Linux.
 """
 
 import sys
+import os
+import shutil
+import tempfile
+import uuid
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -18,19 +24,35 @@ from memory_client import (
 )
 
 
+# Use a temporary directory for test database
+TEST_DB_PATH = None
+
+
+def get_test_db_path():
+    """Get or create a temporary database path for testing."""
+    global TEST_DB_PATH
+    if TEST_DB_PATH is None:
+        # KùzuDB creates the directory itself, so we just need a unique path
+        # that doesn't exist yet
+        temp_dir = tempfile.gettempdir()
+        TEST_DB_PATH = os.path.join(temp_dir, f"axons_test_{uuid.uuid4().hex[:8]}")
+    return TEST_DB_PATH
+
+
 def test_connection():
-    """Test basic connection to Memgraph."""
-    print("Testing connection to Memgraph...")
+    """Test basic connection to KùzuDB."""
+    print("Testing connection to KùzuDB...")
     try:
-        client = MemoryGraphClient(uri="bolt://localhost:7687")
-        # Simple query to verify connection
-        result = client._run_query("RETURN 1 as test")
-        assert result[0]["test"] == 1
+        client = MemoryGraphClient(db_path=get_test_db_path())
+        # Simple query to verify connection - just check we can initialize
+        client.initialize_schema()
         print("  Connection successful!")
         client.close()
         return True
     except Exception as e:
         print(f"  Connection failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -38,12 +60,14 @@ def test_schema_initialization():
     """Test schema initialization."""
     print("\nInitializing schema...")
     try:
-        with MemoryGraphClient(uri="bolt://localhost:7687") as client:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
             client.initialize_schema()
         print("  Schema initialized!")
         return True
     except Exception as e:
         print(f"  Schema initialization failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -51,16 +75,18 @@ def test_create_memory():
     """Test creating a memory with associations."""
     print("\nTesting memory creation...")
     try:
-        with MemoryGraphClient(uri="bolt://localhost:7687") as client:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
             # Create a test memory
             memory_id = quick_store_memory(
                 client,
-                content="James prefers to use Memgraph for graph database needs because of its speed and Cypher compatibility.",
-                summary="User preference for Memgraph database",
-                concepts=["graph database", "data persistence", "performance"],
-                keywords=["memgraph", "cypher", "speed"],
+                content="User prefers to use KùzuDB for graph database needs because it's cross-platform and easy to install.",
+                summary="User preference for KùzuDB database",
+                concepts=["graph database", "data persistence", "cross-platform"],
+                keywords=["kuzu", "embedded", "simple"],
                 topics=["Technology Preferences", "Software Architecture"],
-                entities=[("James", "person"), ("Memgraph", "technology")],
+                entities=[("User", "person"), ("KùzuDB", "technology")],
                 confidence=1.0
             )
             print(f"  Created memory: {memory_id}")
@@ -82,23 +108,25 @@ def test_relationships():
     """Test creating and querying relationships."""
     print("\nTesting relationships...")
     try:
-        with MemoryGraphClient(uri="bolt://localhost:7687") as client:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
             # Create two related memories
             memory1_id = quick_store_memory(
                 client,
-                content="The memory graph system uses Memgraph as its backend database.",
+                content="The memory graph system uses KùzuDB as its backend database.",
                 summary="Memory system architecture decision",
                 concepts=["architecture", "graph database"],
-                keywords=["memgraph", "memory system"],
+                keywords=["kuzu", "memory system"],
                 topics=["Software Architecture"]
             )
 
             memory2_id = quick_store_memory(
                 client,
-                content="Memgraph was chosen over Neo4j for its better performance and lower resource usage.",
+                content="KùzuDB was chosen for its cross-platform compatibility and simple installation.",
                 summary="Database selection rationale",
-                concepts=["architecture", "performance", "graph database"],
-                keywords=["memgraph", "neo4j", "comparison"],
+                concepts=["architecture", "cross-platform", "graph database"],
+                keywords=["kuzu", "pip install", "comparison"],
                 topics=["Software Architecture", "Technology Decisions"]
             )
 
@@ -126,10 +154,12 @@ def test_goals_and_questions():
     """Test goals and questions functionality."""
     print("\nTesting goals and questions...")
     try:
-        with MemoryGraphClient(uri="bolt://localhost:7687") as client:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
             # Create a goal
             goal = Goal(
-                description="Build a comprehensive memory system for Claude",
+                description="Build a comprehensive memory system for AI agents",
                 status=GoalStatus.ACTIVE,
                 priority=1
             )
@@ -164,7 +194,9 @@ def test_directory_export():
     """Test directory markdown export."""
     print("\nTesting directory export...")
     try:
-        with MemoryGraphClient(uri="bolt://localhost:7687") as client:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
             markdown = client.export_directory_markdown()
             print("  Generated directory markdown:")
             print("-" * 40)
@@ -190,20 +222,26 @@ def test_directory_export():
 def cleanup_test_data():
     """Remove all test data from the database."""
     print("\nCleaning up test data...")
+    global TEST_DB_PATH
     try:
-        with MemoryGraphClient(uri="bolt://localhost:7687") as client:
-            client._run_write("MATCH (n) DETACH DELETE n")
+        if TEST_DB_PATH and Path(TEST_DB_PATH).exists():
+            # On Windows, need to handle locked files more carefully
+            import time
+            time.sleep(0.1)  # Brief pause to ensure handles are released
+            shutil.rmtree(TEST_DB_PATH, ignore_errors=True)
+            TEST_DB_PATH = None
         print("  Cleanup complete!")
         return True
     except Exception as e:
-        print(f"  Cleanup failed: {e}")
-        return False
+        print(f"  Cleanup warning: {e}")
+        # Not a critical failure - temp files will be cleaned up by OS
+        return True
 
 
 def main():
     """Run all tests."""
     print("=" * 60)
-    print("Memory Graph System Test Suite")
+    print("Memory Graph System Test Suite (KùzuDB)")
     print("=" * 60)
 
     results = {}
@@ -218,8 +256,8 @@ def main():
         results["goals_questions"] = test_goals_and_questions()
         results["directory"] = test_directory_export()
 
-        # Optionally cleanup
-        # cleanup_test_data()
+    # Always cleanup
+    cleanup_test_data()
 
     # Summary
     print("\n" + "=" * 60)

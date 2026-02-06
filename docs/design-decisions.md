@@ -1,6 +1,6 @@
 # Design Decisions
 
-This document explains the reasoning behind the architectural and technical choices made for the Claude Memory Graph System.
+This document explains the reasoning behind the architectural and technical choices made for the Axons Memory Graph System.
 
 ## Why a Graph Database?
 
@@ -31,47 +31,43 @@ This allows queries like:
 - "What decisions were informed by memories about 'security'?"
 - "Which memories contradict each other?"
 
-## Why Memgraph?
+## Why KùzuDB?
 
 We evaluated several graph databases:
 
 | Database | Pros | Cons |
 |----------|------|------|
-| **Neo4j** | Most mature, best tooling, huge community | JVM-based (500MB+ RAM), slower startup |
-| **Memgraph** | C++ (fast, low memory), Cypher-compatible | Smaller community |
-| **ArangoDB** | Multi-model | AQL less intuitive for graphs |
+| **Neo4j** | Most mature, best tooling, huge community | JVM-based (500MB+ RAM), requires server setup |
+| **Memgraph** | C++ (fast, low memory), Cypher-compatible | Requires WSL on Windows, no macOS support |
+| **ArangoDB** | Multi-model | AQL less intuitive for graphs, server required |
 | **SurrealDB** | Modern, Rust-based | Very new, still maturing |
-| **FalkorDB** | Extremely fast | Limited Cypher support |
+| **KùzuDB** | Embedded, cross-platform, pip install | Smaller community |
 
-### Decision: Memgraph
+### Decision: KùzuDB
 
 **Primary reasons:**
 
-1. **Speed**: C++ implementation means faster queries and lower latency than JVM-based alternatives
-2. **Low memory footprint**: ~100-200MB at idle vs 500MB+ for Neo4j
-3. **Cypher compatibility**: Uses the same query language as Neo4j, so skills transfer and there's abundant documentation
-4. **Fast startup**: ~1 second vs Neo4j's 10-30 seconds
-5. **Extensibility**: MAGE library provides 60+ graph algorithms, and custom query modules can be written in Python/C++
+1. **Zero Setup**: Just `pip install kuzu` - no server, no Docker, no WSL, no configuration
+2. **Cross-Platform**: Native binaries for Windows, macOS, and Linux without any workarounds
+3. **Embedded**: Runs in-process like SQLite, data stored in a local directory
+4. **Speed**: C++ implementation means fast queries and low memory usage
+5. **Cypher Support**: Uses a Cypher-like query language, so existing knowledge transfers
+6. **Lightweight**: Small footprint, no background processes to manage
 
 **Trade-offs accepted:**
 - Smaller community than Neo4j
-- Fewer tutorials and examples
-- Must run in WSL on Windows (no native Windows binary)
+- Fewer advanced features than enterprise databases
+- Some Cypher syntax differences (minor)
 
-## Why WSL?
+### Previous Choice: Memgraph (Deprecated)
 
-Memgraph doesn't have a native Windows installer. The options were:
+We previously used Memgraph, which required:
+- WSL2 on Windows (doesn't work on macOS)
+- systemd service management
+- Windows Task Scheduler for auto-start
+- Multiple configuration steps
 
-1. **Docker**: Requires Docker Desktop, adds complexity
-2. **WSL**: Ubuntu runs natively in WSL2, Memgraph installs normally
-3. **Remote server**: Adds latency and infrastructure
-
-### Decision: WSL2 with Ubuntu
-
-- Already available on most Windows developer machines
-- No additional software required beyond WSL itself
-- Memgraph runs as a systemd service (standard Linux administration)
-- Network is bridged, so localhost:7687 works from Windows
+This created a 9-step setup process and platform lock-in. KùzuDB eliminates all of this complexity.
 
 ## Database Design: Why These Node Types?
 
@@ -149,23 +145,21 @@ Early design considered storing summaries in the graph and full content in markd
 
 ## Python Client Design
 
-### Why neo4j Driver?
+### Why KùzuDB's Native Python Bindings?
 
-Memgraph speaks the Bolt protocol (same as Neo4j). Options were:
+KùzuDB provides native Python bindings via pip:
 
 | Library | Pros | Cons |
 |---------|------|------|
-| **neo4j** (Python driver) | Lightweight, well-maintained, works with Memgraph | Name is confusing |
-| **gqlalchemy** | Memgraph's official ORM | Heavier, more dependencies |
-| **pymgclient** | Low-level C bindings | Requires compilation |
+| **kuzu** (official) | Native, lightweight, well-maintained | Name matches database |
 
-**Decision**: neo4j driver - lightest option that works.
+**Decision**: Use the official kuzu package - it's the only option and works well.
 
 ### API Design: Data Classes + Client
 
 The client uses:
 - **Data classes** for type safety and IDE completion
-- **MERGE for idempotency** - creating the same concept twice returns the existing one
+- **Check-then-create for idempotency** - creating the same concept twice returns the existing one
 - **Explicit relationship methods** - clear what connections are being made
 
 ```python
@@ -191,21 +185,29 @@ quick_store_memory(
 )
 ```
 
-## Auto-Start Design
+## Embedded Database Benefits
 
-### Requirements
+### No Auto-Start Needed
 
-1. Memgraph should be running whenever the user might need it
-2. No manual intervention after Windows reboot
-3. Minimal resource usage when idle
+Unlike server-based databases, KùzuDB:
+- Runs in your Python process
+- Starts automatically when you create a client
+- Stops when your program ends
+- No background services to manage
 
-### Solution
+### Data Persistence
 
-1. **systemd in WSL**: `systemctl enable memgraph` makes it start when Ubuntu starts
-2. **WSL auto-start**: Windows Task Scheduler runs `wsl -d Ubuntu -- sleep infinity` at boot
-3. **sleep infinity**: Keeps WSL alive so systemd services remain running
+KùzuDB stores data in a directory you specify:
+- Default: `~/.axons_memory_db`
+- Custom: Pass `db_path` to `MemoryGraphClient`
 
-This is the cleanest approach because:
-- Uses standard Linux service management
-- Uses standard Windows task scheduling
-- No custom scripts or hacks
+Data persists between sessions automatically.
+
+### Cross-Platform Consistency
+
+The same code works identically on:
+- Windows
+- macOS
+- Linux
+
+No platform-specific setup or workarounds required.

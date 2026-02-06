@@ -10,7 +10,7 @@ The core node type - represents a single memory.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `content` | String | Full memory content |
 | `summary` | String | Brief summary for quick scanning |
 | `created` | DateTime | When the memory was created |
@@ -24,7 +24,7 @@ Abstract ideas that memories relate to.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `name` | String | The concept name (e.g., "authentication") |
 | `description` | String | Optional description |
 | `created` | DateTime | When first created |
@@ -35,7 +35,7 @@ Specific terms for exact matching.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `term` | String | The keyword (e.g., "OAuth2") |
 | `created` | DateTime | When first created |
 
@@ -45,7 +45,7 @@ Broader subject areas.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `name` | String | The topic name (e.g., "Software Architecture") |
 | `description` | String | Optional description |
 | `created` | DateTime | When first created |
@@ -56,7 +56,7 @@ People, organizations, projects, tools, technologies, places.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `name` | String | Entity name |
 | `type` | Enum | One of: person, organization, project, tool, technology, place |
 | `description` | String | Optional description |
@@ -69,7 +69,7 @@ Where information came from.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `type` | Enum | One of: conversation, file, url, document, observation |
 | `reference` | String | The actual reference (file path, URL, etc.) |
 | `title` | String | Human-readable title |
@@ -82,7 +82,7 @@ Choices made with their rationale.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `description` | String | What was decided |
 | `rationale` | String | Why it was decided |
 | `date` | DateTime | When the decision was made |
@@ -95,7 +95,7 @@ User objectives.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `description` | String | The goal |
 | `status` | Enum | One of: active, achieved, abandoned |
 | `priority` | Integer | Priority (1 = highest) |
@@ -108,7 +108,7 @@ Unresolved items.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `text` | String | The question |
 | `status` | Enum | One of: open, partial, answered |
 | `answeredDate` | DateTime | When fully answered (if applicable) |
@@ -120,7 +120,7 @@ Projects, tasks, conversations, sessions, domains.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `name` | String | Context name |
 | `type` | Enum | One of: project, task, conversation, session, domain |
 | `description` | String | Optional description |
@@ -133,7 +133,7 @@ User likes/dislikes and working styles.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `category` | String | Category (e.g., "coding style", "communication") |
 | `preference` | String | The preference itself |
 | `strength` | Float (-1 to 1) | -1 = strong dislike, 0 = neutral, 1 = strong like |
@@ -146,7 +146,7 @@ Time periods and sequences.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `type` | Enum | One of: point, period, sequence |
 | `description` | String | Description of the time marker |
 | `startDate` | DateTime | Start of period (if applicable) |
@@ -159,7 +159,7 @@ When information conflicts.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `id` | UUID | Unique identifier |
+| `id` | UUID | Unique identifier (primary key) |
 | `description` | String | What the contradiction is |
 | `resolution` | String | How it was resolved (if applicable) |
 | `status` | Enum | One of: unresolved, resolved, accepted |
@@ -172,9 +172,9 @@ When information conflicts.
 ### Memory Relationships
 
 ```
-(Memory)-[:RELATES_TO {strength: Float, type: String}]->(Memory)
+(Memory)-[:RELATES_TO {strength: Float, relType: String}]->(Memory)
 ```
-Links two related memories. `strength` indicates how strongly related (0-1). `type` describes the relationship kind.
+Links two related memories. `strength` indicates how strongly related (0-1). `relType` describes the relationship kind.
 
 ```
 (Memory)-[:HAS_CONCEPT {relevance: Float}]->(Concept)
@@ -187,9 +187,9 @@ Memory relates to a concept. `relevance` indicates how central this concept is t
 Memory contains this keyword.
 
 ```
-(Memory)-[:BELONGS_TO {primary: Boolean}]->(Topic)
+(Memory)-[:BELONGS_TO {isPrimary: Boolean}]->(Topic)
 ```
-Memory belongs to a topic. `primary` indicates if this is the main topic.
+Memory belongs to a topic. `isPrimary` indicates if this is the main topic.
 
 ```
 (Memory)-[:MENTIONS {role: String}]->(Entity)
@@ -231,42 +231,12 @@ Memory supports this goal.
 ```
 Memory reveals this user preference.
 
-```
-(Memory)-[:INVOLVED_IN]->(Contradiction)
-```
-Memory is involved in a contradiction.
-
 ### Inter-Node Relationships
 
 ```
-(Concept)-[:RELATED_TO {type: String}]->(Concept)
+(Concept)-[:CONCEPT_RELATED_TO {relType: String}]->(Concept)
 ```
 Two concepts are related.
-
-```
-(Concept)-[:PART_OF]->(Topic)
-```
-Concept belongs to a broader topic.
-
-```
-(Keyword)-[:INDICATES]->(Concept)
-```
-Keyword suggests a concept.
-
-```
-(Entity)-[:RELATED_TO {relationship: String}]->(Entity)
-```
-Two entities are related. `relationship` describes how (e.g., "works for", "created by").
-
-```
-(Entity)-[:WORKS_ON]->(Context)
-```
-Person/organization is associated with a project/context.
-
-```
-(Entity)-[:CREATED]->(Source)
-```
-Entity authored a source.
 
 ```
 (Decision)-[:LED_TO]->(Decision)
@@ -274,39 +244,9 @@ Entity authored a source.
 One decision led to another (causal chain).
 
 ```
-(Decision)-[:SUPPORTS]->(Goal)
-```
-Decision supports a goal.
-
-```
-(Decision)-[:ADDRESSES]->(Question)
-```
-Decision resolves a question.
-
-```
 (Goal)-[:DEPENDS_ON]->(Goal)
 ```
 Goal hierarchy/dependencies.
-
-```
-(Goal)-[:BLOCKED_BY]->(Question)
-```
-Goal can't be achieved until question is answered.
-
-```
-(Question)-[:RELATED_TO]->(Question)
-```
-Connected unknowns.
-
-```
-(Question)-[:ABOUT]->(Entity)
-```
-Question concerns an entity.
-
-```
-(Question)-[:ABOUT]->(Concept)
-```
-Question concerns a concept.
 
 ```
 (Context)-[:PART_OF]->(Context)
@@ -314,29 +254,14 @@ Question concerns a concept.
 Context hierarchy (task within project).
 
 ```
-(Context)-[:PRECEDED_BY]->(Context)
-```
-Sequence of contexts.
-
-```
-(Contradiction)-[:SUPERSEDES]->(Memory)
-```
-In a resolved contradiction, new info supersedes old.
-
-```
 (Contradiction)-[:CONFLICTS_WITH]->(Memory)
 ```
 The memories that conflict with each other.
 
 ```
-(TemporalMarker)-[:BEFORE]->(TemporalMarker)
+(Contradiction)-[:SUPERSEDES]->(Memory)
 ```
-Time sequence.
-
-```
-(TemporalMarker)-[:CONTAINS]->(TemporalMarker)
-```
-Period contains a point or smaller period.
+In a resolved contradiction, new info supersedes old.
 
 ---
 
@@ -382,74 +307,29 @@ Period contains a point or smaller period.
 
 ---
 
-## Indexes
-
-The following indexes are created for fast lookups:
-
-```cypher
-// Primary identifiers
-CREATE INDEX ON :Memory(id);
-CREATE INDEX ON :Concept(id);
-CREATE INDEX ON :Keyword(id);
-CREATE INDEX ON :Topic(id);
-CREATE INDEX ON :Entity(id);
-CREATE INDEX ON :Source(id);
-CREATE INDEX ON :Decision(id);
-CREATE INDEX ON :Goal(id);
-CREATE INDEX ON :Question(id);
-CREATE INDEX ON :Context(id);
-CREATE INDEX ON :Preference(id);
-CREATE INDEX ON :TemporalMarker(id);
-CREATE INDEX ON :Contradiction(id);
-
-// Common query fields
-CREATE INDEX ON :Memory(created);
-CREATE INDEX ON :Memory(lastAccessed);
-CREATE INDEX ON :Concept(name);
-CREATE INDEX ON :Keyword(term);
-CREATE INDEX ON :Topic(name);
-CREATE INDEX ON :Entity(name);
-CREATE INDEX ON :Entity(type);
-CREATE INDEX ON :Goal(status);
-CREATE INDEX ON :Question(status);
-CREATE INDEX ON :Context(name);
-CREATE INDEX ON :Context(status);
-CREATE INDEX ON :Preference(category);
-CREATE INDEX ON :Contradiction(status);
-```
-
----
-
 ## Example Queries
 
-### Find memories related to a concept within 2 hops
+### Find memories related to a concept
 
 ```cypher
-MATCH (m:Memory)-[:HAS_CONCEPT|RELATES_TO*1..2]-(related:Memory)
-WHERE m.id = $memoryId
-RETURN DISTINCT related
+MATCH (m:Memory)-[:HAS_CONCEPT]->(c:Concept {name: $conceptName})
+RETURN m
+ORDER BY m.lastAccessed DESC
+LIMIT 20
 ```
 
 ### Find memories that might answer an open question
 
 ```cypher
 MATCH (q:Question {status: 'open'})<-[:PARTIALLY_ANSWERS]-(m:Memory)
-RETURN q, collect(m) as relevantMemories
-```
-
-### Trace the reasoning behind a decision
-
-```cypher
-MATCH (m:Memory)-[:INFORMED]->(d:Decision)-[:LED_TO*0..3]->(outcome:Decision)
-WHERE d.id = $decisionId
-RETURN m, d, outcome
+RETURN q, m
 ```
 
 ### Find all unresolved contradictions
 
 ```cypher
 MATCH (c:Contradiction {status: 'unresolved'})-[:CONFLICTS_WITH]->(m:Memory)
-RETURN c, collect(m) as conflictingMemories
+RETURN c, m
 ```
 
 ### Get user preferences in a category
@@ -460,9 +340,11 @@ RETURN p
 ORDER BY p.strength DESC
 ```
 
-### Find all entities connected to a project
+### Find memories through shared concepts
 
 ```cypher
-MATCH (e:Entity)-[:WORKS_ON|MENTIONS*1..2]-(ctx:Context {name: $projectName})
-RETURN DISTINCT e
+MATCH (m1:Memory {id: $memoryId})-[:HAS_CONCEPT]->(c:Concept)<-[:HAS_CONCEPT]-(m2:Memory)
+WHERE m2.id <> $memoryId
+RETURN DISTINCT m2
+LIMIT 20
 ```
