@@ -95,12 +95,6 @@ class Curve(Enum):
     LOGARITHMIC = "logarithmic" # Slow start, accelerating
 
 
-# Backwards compatibility aliases
-DecayCurve = Curve
-PlasticityCurve = Curve
-StrengtheningCurve = Curve
-
-
 # ============================================================================
 # DATA CLASSES
 # ============================================================================
@@ -237,14 +231,15 @@ class PlasticityConfig:
     Configuration for brain-like plasticity behavior.
 
     Design principles:
-    - Single base_amount with context-specific multipliers (no redundant amounts)
+    - Independent context-specific amounts for each operation type
     - Symmetrical curves for strengthening and weakening
     - Clear separation: decay (time-based) vs weaken (explicit action)
+    - Semantic similarity can only boost initial strength, never weaken
 
     Example:
         config = PlasticityConfig(
-            learning_rate=1.5,
-            curve=PlasticityCurve.DIMINISHING,
+            learning_rate=1.0,
+            curve=Curve.EXPONENTIAL,
             retrieval_strengthens=True
         )
         client = MemoryGraphClient(plasticity_config=config)
@@ -252,51 +247,90 @@ class PlasticityConfig:
 
     # === MASTER CONTROL ===
     # Global multiplier for all plasticity operations (0=disabled, 1=normal)
-    # All amounts are multiplied by this value
-    learning_rate: float = 1.00000
+    learning_rate: float = 1.0
 
     # === CONTEXT-SPECIFIC AMOUNTS ===
     # Each context has its own independent base amount (0-1 scale)
     # Effective amount = context_amount * learning_rate * curve_adjustment
-    strengthen_amount: float = 0.10000   # For explicit strengthen operations
-    weaken_amount: float = 0.10000       # For explicit weaken operations
-    hebbian_amount: float = 0.05000      # For co-access strengthening
-    retrieval_amount: float = 0.02000    # For retrieval-induced changes
-    decay_amount: float = 0.05000        # For time-based decay
+    strengthen_amount: float = 0.1    # For explicit strengthen operations
+    weaken_amount: float = 0.1        # For explicit weaken operations
+    hebbian_amount: float = 0.05      # For co-access strengthening
+    retrieval_amount: float = 0.02    # For retrieval-induced changes
+    decay_amount: float = 0.05        # For time-based decay
+
+    # === INITIAL CONNECTION STRENGTH ===
+    # Starting strength when new connections are created
+    initial_strength_explicit: float = 0.5   # User-created/explicit connections
+    initial_strength_implicit: float = 0.3   # Hebbian/emergent connections
+    # Optional: augment initial strength with semantic similarity (0-1 multiplier)
+    use_semantic_similarity: bool = False
+    # Callback for semantic similarity (set at runtime if use_semantic_similarity=True)
+    # Should be a function(content1: str, content2: str) -> float (0-1)
+    # Not serialized - must be set programmatically
+    _semantic_similarity_fn: Optional[Any] = field(default=None, repr=False)
 
     # === STRENGTH BOUNDS ===
-    max_strength: float = 1.00000        # Connection strength ceiling
-    min_strength: float = 0.00000        # Connection strength floor
+    max_strength: float = 1.0         # Connection strength ceiling
+    min_strength: float = 0.0         # Connection strength floor
 
     # === PLASTICITY CURVE ===
     # How current strength affects rate of change
     # Applies symmetrically: strengthening uses curve directly, weakening uses inverse
     curve: Curve = Curve.LINEAR
-    # Controls curve steepness (0-1 scale, where 0.50000 = moderate)
-    curve_steepness: float = 0.50000
+    curve_steepness: float = 0.5      # Controls curve intensity (0.1=steep, 0.9=gentle)
 
     # === TIME-BASED DECAY ===
     # Decay is separate from weakening - it's automatic/time-based
-    # Uses same Curve enum as plasticity curve for consistency
     decay_curve: Curve = Curve.EXPONENTIAL
-    decay_half_life: float = 0.10000  # Fraction of max cycles for half-life (0-1)
-    decay_threshold: float = 0.50000  # Only connections below this decay (unless decay_all=True)
+    decay_half_life: float = 0.1      # Fraction of 100 cycles for half-life (0.1=10 cycles)
+    decay_threshold: float = 0.5      # Only connections below this decay (unless decay_all=True)
     decay_all: bool = False           # If True, all connections decay regardless of strength
 
     # === PRUNING ===
-    prune_threshold: float = 0.01000  # Remove connections at or below this strength
+    prune_threshold: float = 0.01     # Remove connections at or below this strength
     auto_prune: bool = True           # Automatically prune during decay operations
 
     # === RETRIEVAL EFFECTS ===
-    # Accessing/recalling a memory can modify connections (like human recall)
     retrieval_strengthens: bool = True           # Strengthen connections to accessed memories
     retrieval_weakens_competitors: bool = False  # Weaken related but not-accessed memories
-    competitor_distance: float = 0.10000         # How far (as fraction) to consider competitors
+    competitor_distance: float = 0.1             # How much to scale competitor weakening
 
     # === HEBBIAN LEARNING ===
-    # "Neurons that fire together wire together"
     hebbian_creates_connections: bool = True     # Create new links between co-accessed memories
-    hebbian_initial_strength: float = 0.30000   # Starting strength for newly created connections
+
+    def get_initial_strength(self, explicit: bool, content1: str = None, content2: str = None) -> float:
+        """Calculate initial strength for a new connection.
+
+        Args:
+            explicit: True for user-created connections, False for implicit/Hebbian
+            content1: Optional content of first memory (for semantic similarity)
+            content2: Optional content of second memory (for semantic similarity)
+
+        Returns:
+            Initial strength value (0-1)
+        """
+        base = self.initial_strength_explicit if explicit else self.initial_strength_implicit
+
+        # Optionally boost with semantic similarity (can only increase, never decrease)
+        if self.use_semantic_similarity and self._semantic_similarity_fn and content1 and content2:
+            try:
+                similarity = self._semantic_similarity_fn(content1, content2)
+                # Use similarity to scale the headroom between base and max
+                # e.g., base=0.5, max=1.0, similarity=0.8 -> 0.5 + (0.5 * 0.8) = 0.9
+                headroom = self.max_strength - base
+                base = base + (headroom * similarity)
+            except Exception:
+                pass  # Fall back to base strength if similarity fails
+
+        return min(self.max_strength, max(self.min_strength, base))
+
+    def set_semantic_similarity_fn(self, fn):
+        """Set the semantic similarity function.
+
+        Args:
+            fn: A callable(content1: str, content2: str) -> float (0-1)
+        """
+        self._semantic_similarity_fn = fn
 
     @classmethod
     def default(cls) -> "PlasticityConfig":
@@ -307,28 +341,28 @@ class PlasticityConfig:
     def aggressive_learning(cls) -> "PlasticityConfig":
         """Fast learning with quick adaptation."""
         return cls(
-            learning_rate=1.00000,
-            strengthen_amount=0.15000,
-            hebbian_amount=0.10000,
-            retrieval_amount=0.05000,
-            decay_threshold=0.30000,
+            learning_rate=1.0,
+            strengthen_amount=0.15,
+            hebbian_amount=0.1,
+            retrieval_amount=0.05,
+            decay_threshold=0.3,
         )
 
     @classmethod
     def conservative_learning(cls) -> "PlasticityConfig":
         """Slow, stable learning with gradual changes."""
         return cls(
-            learning_rate=0.50000,
+            learning_rate=0.5,
             curve=Curve.EXPONENTIAL,
-            decay_threshold=0.70000,
-            prune_threshold=0.00500,
+            decay_threshold=0.7,
+            prune_threshold=0.005,
         )
 
     @classmethod
     def no_plasticity(cls) -> "PlasticityConfig":
         """Disable all automatic plasticity (manual operations only)."""
         return cls(
-            learning_rate=0.00000,
+            learning_rate=0.0,
             retrieval_strengthens=False,
             retrieval_weakens_competitors=False,
             auto_prune=False,
@@ -338,11 +372,11 @@ class PlasticityConfig:
     def high_decay(cls) -> "PlasticityConfig":
         """Aggressive forgetting for memory pressure scenarios."""
         return cls(
-            decay_amount=0.10000,
-            decay_threshold=0.70000,
+            decay_amount=0.1,
+            decay_threshold=0.7,
             decay_all=True,
-            prune_threshold=0.05000,
-            decay_half_life=0.05000,
+            prune_threshold=0.05,
+            decay_half_life=0.05,
         )
 
     def _apply_curve(self, amount: float, current_strength: float, for_increase: bool) -> float:
@@ -360,7 +394,7 @@ class PlasticityConfig:
             return amount
 
         # Convert 0-1 steepness to effective exponent (0.1 -> 10, 0.5 -> 2, 0.9 -> 1.1)
-        steepness = max(0.10000, min(0.90000, self.curve_steepness))
+        steepness = max(0.1, min(0.9, self.curve_steepness))
         exponent = 1.0 / steepness
 
         if self.curve == Curve.EXPONENTIAL:
@@ -371,7 +405,7 @@ class PlasticityConfig:
             else:
                 # Harder to weaken already-weak connections (symmetrical)
                 factor = current_strength ** exponent
-            return amount * max(0.10000, factor)
+            return amount * max(0.1, factor)
 
         if self.curve == Curve.LOGARITHMIC:
             # Logarithmic: slower changes near the starting point, faster near limits
@@ -385,7 +419,7 @@ class PlasticityConfig:
 
         return amount
 
-    def effective_amount(self, context: str, current_strength: float = 0.50000) -> float:
+    def effective_amount(self, context: str, current_strength: float = 0.5) -> float:
         """Calculate effective plasticity amount for a given context.
 
         Args:
@@ -402,7 +436,7 @@ class PlasticityConfig:
             'retrieval': self.retrieval_amount,
             'decay': self.decay_amount,
         }
-        base = amounts.get(context, 0.10000) * self.learning_rate
+        base = amounts.get(context, 0.1) * self.learning_rate
 
         # Apply curve (for_increase=True for strengthen/hebbian/retrieval, False for weaken/decay)
         for_increase = context in ('strengthen', 'hebbian', 'retrieval')
@@ -419,19 +453,19 @@ class PlasticityConfig:
             Amount to decay (subtract from strength), 0-1 scale
         """
         if current_strength > self.decay_threshold and not self.decay_all:
-            return 0.00000
+            return 0.0
 
         base = self.decay_amount * self.learning_rate
 
         if self.decay_curve == Curve.LINEAR:
-            return min(1.00000, base * cycles)
+            return min(1.0, base * cycles)
         elif self.decay_curve == Curve.EXPONENTIAL:
             # Convert 0-1 half_life to effective cycles (0.1 = 10 cycles, 0.5 = 50 cycles)
             effective_half_life = max(1, int(self.decay_half_life * 100))
             return current_strength * (1.0 - (0.5 ** (cycles / effective_half_life)))
         elif self.decay_curve == Curve.LOGARITHMIC:
             import math
-            return min(1.00000, base * math.log1p(cycles))
+            return min(1.0, base * math.log1p(cycles))
 
         return base
 
@@ -456,43 +490,8 @@ class PlasticityConfig:
         if "curve" in data and isinstance(data["curve"], str):
             data["curve"] = Curve(data["curve"])
 
-        # Handle old parameter names for backwards compatibility
-        old_to_new = {
-            'strengthening_curve': 'curve',
-            'diminishing_factor': 'curve_steepness',
-            'base_strengthening_amount': 'strengthen_amount',
-            'base_weakening_amount': 'weaken_amount',
-            'base_amount': None,  # Remove if present (was intermediate version)
-            'pruning_threshold': 'prune_threshold',
-            'decay_affects_all': 'decay_all',
-            'hebbian_learning_amount': 'hebbian_amount',
-            'retrieval_strengthening_amount': 'retrieval_amount',
-            'base_decay_rate': 'decay_amount',
-            'strengthen_factor': None,  # Remove factor-based params
-            'weaken_factor': None,
-            'hebbian_factor': None,
-            'retrieval_factor': None,
-            'decay_factor': None,
-            'competitor_hops': 'competitor_distance',
-        }
-
-        for old_name, new_name in old_to_new.items():
-            if old_name in data:
-                value = data.pop(old_name)
-                if new_name and new_name not in data:
-                    # Convert curve enums
-                    if new_name == 'curve' and isinstance(value, str):
-                        value = Curve(value)
-                    data[new_name] = value
-
-        # Remove parameters that no longer exist
-        removed_params = ['symmetric_curves', 'competitor_weakening_amount',
-                         'concept_relevance_adjustment', 'access_boosts_concept_relevance',
-                         'goal_progress_strengthening', 'question_answer_strengthening',
-                         'use_real_time_decay', 'hourly_decay_rate', 'relationship_weights',
-                         'pruning_grace_period']
-        for param in removed_params:
-            data.pop(param, None)
+        # Remove internal fields that shouldn't be in serialized data
+        data.pop('_semantic_similarity_fn', None)
 
         return cls(**data)
 
@@ -1395,9 +1394,10 @@ class MemoryGraphClient:
                 # Check if connection exists
                 strength = self.get_memory_link_strength(id1, id2)
                 if strength is None and self.plasticity.hebbian_creates_connections:
-                    # Create new connection with initial strength
-                    self.link_memories(id1, id2, self.plasticity.hebbian_initial_strength, "hebbian")
-                    self.link_memories(id2, id1, self.plasticity.hebbian_initial_strength, "hebbian")
+                    # Create new connection with initial implicit strength
+                    initial = self.plasticity.get_initial_strength(explicit=False)
+                    self.link_memories(id1, id2, initial, "hebbian")
+                    self.link_memories(id2, id1, initial, "hebbian")
                 else:
                     # Use hebbian context for effective amount
                     effective = amount if amount else self.plasticity.effective_amount('hebbian', strength or 0.5)
