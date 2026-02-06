@@ -95,6 +95,35 @@ class Curve(Enum):
     LOGARITHMIC = "logarithmic" # Slow start, accelerating
 
 
+class Permeability(Enum):
+    """
+    Controls data flow direction through compartment boundaries.
+
+    Used for both compartments (default policy) and individual connections (override).
+    Data flow direction is from the perspective of the compartment/connection owner.
+
+    Options:
+    - OPEN: Bidirectional data flow (no restrictions)
+    - CLOSED: No data flow in either direction (complete isolation)
+    - OSMOTIC_INWARD: Data can flow IN (can retrieve external data, but external
+                      queries cannot retrieve data from inside)
+    - OSMOTIC_OUTWARD: Data can flow OUT (external queries can retrieve data,
+                       but cannot retrieve external data from inside)
+    """
+    OPEN = "open"                     # Bidirectional (default)
+    CLOSED = "closed"                 # No data flow
+    OSMOTIC_INWARD = "osmotic_inward"   # Can pull data in, cannot leak out
+    OSMOTIC_OUTWARD = "osmotic_outward" # Can share out, cannot pull in
+
+    def allows_inward(self) -> bool:
+        """Check if this permeability allows inward data flow."""
+        return self in (Permeability.OPEN, Permeability.OSMOTIC_INWARD)
+
+    def allows_outward(self) -> bool:
+        """Check if this permeability allows outward data flow."""
+        return self in (Permeability.OPEN, Permeability.OSMOTIC_OUTWARD)
+
+
 # ============================================================================
 # DATA CLASSES
 # ============================================================================
@@ -108,6 +137,7 @@ class Memory:
     last_accessed: datetime = field(default_factory=datetime.now)
     access_count: int = 0
     confidence: float = 1.0
+    permeability: Permeability = Permeability.OPEN
 
 
 @dataclass
@@ -217,6 +247,31 @@ class Contradiction:
     description: str
     resolution: str = ""
     status: ContradictionStatus = ContradictionStatus.UNRESOLVED
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    created: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class Compartment:
+    """
+    A compartment for isolating memories and controlling data flow.
+
+    Compartmentalization allows:
+    1. Preventing organic connections from forming across boundaries
+    2. Controlling query traversal direction (osmotic data flow)
+
+    Example:
+        # Create a secure project compartment
+        compartment = Compartment(
+            name="Project Q",
+            permeability=Permeability.OSMOTIC_INWARD,  # Can read external, but doesn't leak
+            allow_external_connections=False  # No organic links to outside
+        )
+    """
+    name: str
+    permeability: Permeability = Permeability.OPEN
+    allow_external_connections: bool = True  # Whether organic connections can form externally
+    description: str = ""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created: datetime = field(default_factory=datetime.now)
 
@@ -522,6 +577,7 @@ class MemoryGraphClient:
         self._schema_initialized = False
         self.plasticity = plasticity_config or PlasticityConfig.default()
         self._access_cycle = 0  # Track access cycles for decay calculations
+        self._active_compartment_id: Optional[str] = None  # Active compartment for new memories
 
     def close(self):
         """Close the database connection."""
@@ -589,7 +645,8 @@ class MemoryGraphClient:
                 created STRING,
                 lastAccessed STRING,
                 accessCount INT64,
-                confidence DOUBLE
+                confidence DOUBLE,
+                permeability STRING
             )""",
             """CREATE NODE TABLE IF NOT EXISTS Concept (
                 id STRING PRIMARY KEY,
@@ -677,6 +734,14 @@ class MemoryGraphClient:
                 resolution STRING,
                 status STRING,
                 created STRING
+            )""",
+            """CREATE NODE TABLE IF NOT EXISTS Compartment (
+                id STRING PRIMARY KEY,
+                name STRING,
+                permeability STRING,
+                allowExternalConnections BOOLEAN,
+                description STRING,
+                created STRING
             )"""
         ]
 
@@ -695,8 +760,10 @@ class MemoryGraphClient:
             "CREATE REL TABLE IF NOT EXISTS SUPPORTS (FROM Memory TO Goal, strength DOUBLE)",
             "CREATE REL TABLE IF NOT EXISTS REVEALS (FROM Memory TO Preference)",
             "CREATE REL TABLE IF NOT EXISTS OCCURRED_DURING (FROM Memory TO TemporalMarker)",
-            # Memory-to-memory with synaptic-like strength
-            "CREATE REL TABLE IF NOT EXISTS RELATES_TO (FROM Memory TO Memory, strength DOUBLE, relType STRING)",
+            # Memory-to-memory with synaptic-like strength and permeability for data flow control
+            "CREATE REL TABLE IF NOT EXISTS RELATES_TO (FROM Memory TO Memory, strength DOUBLE, relType STRING, permeability STRING)",
+            # Compartmentalization - memory isolation and data flow control
+            "CREATE REL TABLE IF NOT EXISTS IN_COMPARTMENT (FROM Memory TO Compartment)",
             # Concept relationships
             "CREATE REL TABLE IF NOT EXISTS CONCEPT_RELATED_TO (FROM Concept TO Concept, relType STRING)",
             # Goal/Decision/Context hierarchies
@@ -723,8 +790,14 @@ class MemoryGraphClient:
     # CREATE OPERATIONS
     # ========================================================================
 
-    def create_memory(self, memory: Memory) -> str:
-        """Create a new memory node."""
+    def create_memory(self, memory: Memory, compartment_id: str = None) -> str:
+        """Create a new memory node.
+
+        Args:
+            memory: The Memory object to create
+            compartment_id: Optional compartment ID. If None, uses active compartment.
+                           Pass empty string "" to create without compartment.
+        """
         query = """
         CREATE (m:Memory {
             id: $id,
@@ -733,7 +806,8 @@ class MemoryGraphClient:
             created: $created,
             lastAccessed: $last_accessed,
             accessCount: $access_count,
-            confidence: $confidence
+            confidence: $confidence,
+            permeability: $permeability
         })
         """
         self._run_write(query, {
@@ -743,8 +817,15 @@ class MemoryGraphClient:
             "created": memory.created.isoformat(),
             "last_accessed": memory.last_accessed.isoformat(),
             "access_count": memory.access_count,
-            "confidence": memory.confidence
+            "confidence": memory.confidence,
+            "permeability": memory.permeability.value
         })
+
+        # Add to compartment if specified or active
+        effective_compartment = compartment_id if compartment_id is not None else self._active_compartment_id
+        if effective_compartment:  # Not None and not empty string
+            self.add_memory_to_compartment(memory.id, effective_compartment)
+
         return memory.id
 
     def create_concept(self, concept: Concept) -> str:
@@ -1057,6 +1138,287 @@ class MemoryGraphClient:
         return contradiction.id
 
     # ========================================================================
+    # COMPARTMENT OPERATIONS
+    # ========================================================================
+
+    def create_compartment(self, compartment: Compartment) -> str:
+        """Create a new compartment for memory isolation."""
+        # Check if compartment with same name exists
+        check_query = "MATCH (c:Compartment) WHERE c.name = $name RETURN c.id AS id"
+        result = self._run_query(check_query, {"name": compartment.name})
+        if result:
+            return result[0]["id"]
+
+        query = """
+        CREATE (c:Compartment {
+            id: $id,
+            name: $name,
+            permeability: $permeability,
+            allowExternalConnections: $allow_external,
+            description: $description,
+            created: $created
+        })
+        """
+        self._run_write(query, {
+            "id": compartment.id,
+            "name": compartment.name,
+            "permeability": compartment.permeability.value,
+            "allow_external": compartment.allow_external_connections,
+            "description": compartment.description,
+            "created": compartment.created.isoformat()
+        })
+        return compartment.id
+
+    def get_compartment(self, compartment_id: str) -> Optional[Dict]:
+        """Get a compartment by ID."""
+        query = """
+        MATCH (c:Compartment {id: $id})
+        RETURN c.id AS id, c.name AS name, c.permeability AS permeability,
+               c.allowExternalConnections AS allowExternalConnections,
+               c.description AS description, c.created AS created
+        """
+        result = self._run_query(query, {"id": compartment_id})
+        return result[0] if result else None
+
+    def get_compartment_by_name(self, name: str) -> Optional[Dict]:
+        """Get a compartment by name."""
+        query = """
+        MATCH (c:Compartment {name: $name})
+        RETURN c.id AS id, c.name AS name, c.permeability AS permeability,
+               c.allowExternalConnections AS allowExternalConnections,
+               c.description AS description, c.created AS created
+        """
+        result = self._run_query(query, {"name": name})
+        return result[0] if result else None
+
+    def update_compartment(self, compartment_id: str, permeability: Permeability = None,
+                          allow_external_connections: bool = None, description: str = None):
+        """Update compartment properties."""
+        updates = []
+        params = {"id": compartment_id}
+
+        if permeability is not None:
+            updates.append("c.permeability = $permeability")
+            params["permeability"] = permeability.value
+        if allow_external_connections is not None:
+            updates.append("c.allowExternalConnections = $allow_external")
+            params["allow_external"] = allow_external_connections
+        if description is not None:
+            updates.append("c.description = $description")
+            params["description"] = description
+
+        if updates:
+            query = f"MATCH (c:Compartment {{id: $id}}) SET {', '.join(updates)}"
+            self._run_write(query, params)
+
+    def delete_compartment(self, compartment_id: str, reassign_memories: bool = True):
+        """Delete a compartment.
+
+        Args:
+            compartment_id: ID of compartment to delete
+            reassign_memories: If True, memories are moved to no compartment.
+                              If False, deletion fails if compartment has memories.
+        """
+        if not reassign_memories:
+            # Check if compartment has memories
+            check_query = """
+            MATCH (m:Memory)-[:IN_COMPARTMENT]->(c:Compartment {id: $id})
+            RETURN COUNT(m) AS count
+            """
+            result = self._run_query(check_query, {"id": compartment_id})
+            if result and result[0]["count"] > 0:
+                raise ValueError(f"Compartment has {result[0]['count']} memories. "
+                               "Set reassign_memories=True to remove them from compartment.")
+
+        # Delete relationships first
+        self._run_write(
+            "MATCH (m:Memory)-[r:IN_COMPARTMENT]->(c:Compartment {id: $id}) DELETE r",
+            {"id": compartment_id}
+        )
+        # Delete compartment
+        self._run_write("MATCH (c:Compartment {id: $id}) DELETE c", {"id": compartment_id})
+
+    def set_active_compartment(self, compartment_id: Optional[str]):
+        """Set the active compartment for new memories.
+
+        Args:
+            compartment_id: Compartment ID, or None to create memories without compartment
+        """
+        self._active_compartment_id = compartment_id
+
+    def get_active_compartment(self) -> Optional[str]:
+        """Get the currently active compartment ID."""
+        return self._active_compartment_id
+
+    def add_memory_to_compartment(self, memory_id: str, compartment_id: str):
+        """Add a memory to a compartment.
+
+        A memory can only be in one compartment at a time.
+        """
+        # Remove from any existing compartment first
+        self._run_write(
+            "MATCH (m:Memory {id: $mid})-[r:IN_COMPARTMENT]->() DELETE r",
+            {"mid": memory_id}
+        )
+        # Add to new compartment
+        query = """
+        MATCH (m:Memory {id: $mid}), (c:Compartment {id: $cid})
+        CREATE (m)-[:IN_COMPARTMENT]->(c)
+        """
+        self._run_write(query, {"mid": memory_id, "cid": compartment_id})
+
+    def remove_memory_from_compartment(self, memory_id: str):
+        """Remove a memory from its compartment (make it global)."""
+        self._run_write(
+            "MATCH (m:Memory {id: $mid})-[r:IN_COMPARTMENT]->() DELETE r",
+            {"mid": memory_id}
+        )
+
+    def get_memory_compartment(self, memory_id: str) -> Optional[Dict]:
+        """Get the compartment a memory belongs to, if any."""
+        query = """
+        MATCH (m:Memory {id: $mid})-[:IN_COMPARTMENT]->(c:Compartment)
+        RETURN c.id AS id, c.name AS name, c.permeability AS permeability,
+               c.allowExternalConnections AS allowExternalConnections
+        """
+        result = self._run_query(query, {"mid": memory_id})
+        return result[0] if result else None
+
+    def get_memories_in_compartment(self, compartment_id: str, limit: int = 100) -> List[Dict]:
+        """Get all memories in a compartment."""
+        query = """
+        MATCH (m:Memory)-[:IN_COMPARTMENT]->(c:Compartment {id: $cid})
+        RETURN m.id AS id, m.summary AS summary, m.content AS content,
+               m.created AS created, m.confidence AS confidence
+        LIMIT $limit
+        """
+        return self._run_query(query, {"cid": compartment_id, "limit": limit})
+
+    def can_form_connection(self, memory_id_1: str, memory_id_2: str) -> bool:
+        """Check if an organic connection can form between two memories.
+
+        This checks compartment boundaries - returns True if both memories
+        are in the same compartment, or if their compartments allow external connections.
+        """
+        comp1 = self.get_memory_compartment(memory_id_1)
+        comp2 = self.get_memory_compartment(memory_id_2)
+
+        # Both without compartment - allowed
+        if comp1 is None and comp2 is None:
+            return True
+
+        # Same compartment - allowed
+        if comp1 and comp2 and comp1["id"] == comp2["id"]:
+            return True
+
+        # Different compartments or one without - check allow_external_connections
+        if comp1 and not comp1.get("allowExternalConnections", True):
+            return False
+        if comp2 and not comp2.get("allowExternalConnections", True):
+            return False
+
+        return True
+
+    def can_data_flow(self, from_memory_id: str, to_memory_id: str,
+                      connection_permeability: str = None) -> bool:
+        """Check if data can flow from one memory to another.
+
+        This implements the four-layer permeability check:
+        1. Source memory must allow OUTWARD flow
+        2. Source compartment must allow OUTWARD flow
+        3. Destination compartment must allow INWARD flow
+        4. Destination memory must allow INWARD flow
+        5. Connection must allow this direction (if provided)
+
+        All layers must agree. If ANY layer blocks, the data flow is blocked.
+
+        Args:
+            from_memory_id: Memory where data originates
+            to_memory_id: Memory requesting the data (query origin)
+            connection_permeability: Permeability of the connection (if known)
+
+        Returns:
+            True if data can flow from source to destination
+        """
+        # Check source memory allows outward flow
+        from_mem_perm = self.get_memory_permeability(from_memory_id)
+        if from_mem_perm and not Permeability(from_mem_perm).allows_outward():
+            return False
+
+        # Check destination memory allows inward flow
+        to_mem_perm = self.get_memory_permeability(to_memory_id)
+        if to_mem_perm and not Permeability(to_mem_perm).allows_inward():
+            return False
+
+        # Get compartments
+        from_comp = self.get_memory_compartment(from_memory_id)
+        to_comp = self.get_memory_compartment(to_memory_id)
+
+        # Check source compartment allows outward flow
+        if from_comp:
+            from_perm = Permeability(from_comp.get("permeability", "open"))
+            if not from_perm.allows_outward():
+                return False
+
+        # Check destination compartment allows inward flow
+        if to_comp:
+            to_perm = Permeability(to_comp.get("permeability", "open"))
+            if not to_perm.allows_inward():
+                return False
+
+        # Check connection permeability (if provided)
+        if connection_permeability:
+            conn_perm = Permeability(connection_permeability)
+            # Connection permeability is from perspective of the "owner" (first memory in link)
+            # For data to flow from->to, we need the connection to allow that direction
+            # This depends on which direction the connection was created
+            # For simplicity, we treat OSMOTIC_INWARD as allowing flow toward the connection owner
+            if not conn_perm.allows_inward():
+                return False
+
+        return True
+
+    def set_connection_permeability(self, memory_id_1: str, memory_id_2: str,
+                                    permeability: Permeability):
+        """Set the permeability of a specific connection."""
+        query = """
+        MATCH (m1:Memory {id: $id1})-[r:RELATES_TO]->(m2:Memory {id: $id2})
+        SET r.permeability = $perm
+        """
+        self._run_write(query, {"id1": memory_id_1, "id2": memory_id_2, "perm": permeability.value})
+
+    def get_connection_permeability(self, memory_id_1: str, memory_id_2: str) -> Optional[str]:
+        """Get the permeability of a specific connection."""
+        query = """
+        MATCH (m1:Memory {id: $id1})-[r:RELATES_TO]->(m2:Memory {id: $id2})
+        RETURN r.permeability AS permeability
+        """
+        result = self._run_query(query, {"id1": memory_id_1, "id2": memory_id_2})
+        return result[0]["permeability"] if result else None
+
+    def get_memory_permeability(self, memory_id: str) -> Optional[str]:
+        """Get the permeability of a specific memory."""
+        query = """
+        MATCH (m:Memory {id: $id})
+        RETURN m.permeability AS permeability
+        """
+        result = self._run_query(query, {"id": memory_id})
+        return result[0]["permeability"] if result else None
+
+    def set_memory_permeability(self, memory_id: str, permeability: Permeability):
+        """Set the permeability of a specific memory.
+
+        Args:
+            memory_id: The memory ID
+            permeability: The new permeability setting
+        """
+        query = """
+        MATCH (m:Memory {id: $id})
+        SET m.permeability = $perm
+        """
+        self._run_write(query, {"id": memory_id, "perm": permeability.value})
+
+    # ========================================================================
     # RELATIONSHIP OPERATIONS
     # ========================================================================
 
@@ -1168,19 +1530,38 @@ class MemoryGraphClient:
         """
         self._run_write(query, {"memory_id": memory_id, "temporal_id": temporal_id})
 
-    def link_memories(self, memory_id_1: str, memory_id_2: str, strength: float = 0.5, rel_type: str = ""):
+    def link_memories(self, memory_id_1: str, memory_id_2: str, strength: float = 0.5,
+                      rel_type: str = "", permeability: Permeability = None,
+                      check_compartments: bool = False) -> bool:
         """Link two related memories with a synaptic-like strength.
 
-        Strength (0-1) represents the connection weight - can be increased
-        when memories are accessed together (Hebbian learning) or decreased
-        over time (decay).
+        Args:
+            memory_id_1: First memory ID (connection owner)
+            memory_id_2: Second memory ID
+            strength: Connection weight (0-1), can be modified by plasticity operations
+            rel_type: Optional relationship type label
+            permeability: Optional permeability override for this connection.
+                         If None, uses OPEN (inherits from compartments).
+            check_compartments: If True, checks if connection is allowed by
+                               compartment rules and returns False if blocked.
+
+        Returns:
+            True if connection was created, False if blocked by compartment rules.
         """
+        if check_compartments and not self.can_form_connection(memory_id_1, memory_id_2):
+            return False
+
+        perm_value = permeability.value if permeability else Permeability.OPEN.value
         query = """
         MATCH (m1:Memory), (m2:Memory)
         WHERE m1.id = $id1 AND m2.id = $id2
-        CREATE (m1)-[:RELATES_TO {strength: $strength, relType: $relType}]->(m2)
+        CREATE (m1)-[:RELATES_TO {strength: $strength, relType: $relType, permeability: $perm}]->(m2)
         """
-        self._run_write(query, {"id1": memory_id_1, "id2": memory_id_2, "strength": strength, "relType": rel_type})
+        self._run_write(query, {
+            "id1": memory_id_1, "id2": memory_id_2,
+            "strength": strength, "relType": rel_type, "perm": perm_value
+        })
+        return True
 
     def link_concepts(self, concept_id_1: str, concept_id_2: str, rel_type: str = ""):
         """Link two related concepts."""
@@ -1374,7 +1755,8 @@ class MemoryGraphClient:
         result = self._run_query(query, {"id1": memory_id_1, "id2": memory_id_2})
         return result[0]["strength"] if result else None
 
-    def apply_hebbian_learning(self, memory_ids: List[str], amount: float = None):
+    def apply_hebbian_learning(self, memory_ids: List[str], amount: float = None,
+                               respect_compartments: bool = True):
         """Strengthen connections between all memories accessed together.
 
         When multiple memories are retrieved in the same context, strengthen
@@ -1382,11 +1764,13 @@ class MemoryGraphClient:
         wire together".
 
         If plasticity.hebbian_creates_connections is True, creates new connections
-        between memories that aren't already linked.
+        between memories that aren't already linked (subject to compartment rules).
 
         Args:
             memory_ids: List of memory IDs that were accessed together
             amount: Override for strengthening amount. If None, uses config.
+            respect_compartments: If True, new connections won't be created across
+                                 compartment boundaries that disallow external connections.
         """
         # Strengthen all pairwise connections
         for i, id1 in enumerate(memory_ids):
@@ -1394,13 +1778,17 @@ class MemoryGraphClient:
                 # Check if connection exists
                 strength = self.get_memory_link_strength(id1, id2)
                 if strength is None and self.plasticity.hebbian_creates_connections:
+                    # Check compartment rules before creating new connection
+                    if respect_compartments and not self.can_form_connection(id1, id2):
+                        continue  # Skip - compartment rules block this connection
+
                     # Create new connection with initial implicit strength
                     initial = self.plasticity.get_initial_strength(explicit=False)
                     self.link_memories(id1, id2, initial, "hebbian")
                     self.link_memories(id2, id1, initial, "hebbian")
-                else:
-                    # Use hebbian context for effective amount
-                    effective = amount if amount else self.plasticity.effective_amount('hebbian', strength or 0.5)
+                elif strength is not None:
+                    # Use hebbian context for effective amount (only if connection exists)
+                    effective = amount if amount else self.plasticity.effective_amount('hebbian', strength)
                     self.strengthen_memory_link(id1, id2, effective)
                     self.strengthen_memory_link(id2, id1, effective)
 
@@ -1468,33 +1856,62 @@ class MemoryGraphClient:
         """
         self._run_write(query, {"min_strength": min_strength})
 
-    def get_strongest_connections(self, memory_id: str, limit: int = 10) -> List[Dict]:
+    def get_strongest_connections(self, memory_id: str, limit: int = 10,
+                                  respect_permeability: bool = True) -> List[Dict]:
         """Get the strongest connections from a memory (most relevant associations).
 
-        Returns memories sorted by connection strength, highest first.
+        Args:
+            memory_id: ID of the memory to find connections for
+            limit: Maximum number of results
+            respect_permeability: If True, filters results based on compartment permeability.
+
+        Returns:
+            Memories sorted by connection strength, highest first.
         """
+        # Fetch extra to account for permeability filtering
+        fetch_limit = limit * 3 if respect_permeability else limit
         query = """
         MATCH (m:Memory)-[r:RELATES_TO]->(related:Memory)
         WHERE m.id = $memory_id
-        RETURN related.id AS id, related.summary AS summary, r.strength AS strength
+        RETURN related.id AS id, related.summary AS summary, r.strength AS strength,
+               r.permeability AS permeability
         ORDER BY r.strength DESC
         LIMIT $limit
         """
-        return self._run_query(query, {"memory_id": memory_id, "limit": limit})
+        results = self._run_query(query, {"memory_id": memory_id, "limit": fetch_limit})
 
-    def get_weakest_connections(self, memory_id: str, limit: int = 10) -> List[Dict]:
+        if respect_permeability:
+            results = self._filter_by_permeability(memory_id, results)
+
+        return results[:limit]
+
+    def get_weakest_connections(self, memory_id: str, limit: int = 10,
+                                respect_permeability: bool = True) -> List[Dict]:
         """Get the weakest connections from a memory (candidates for pruning).
 
-        Returns memories sorted by connection strength, lowest first.
+        Args:
+            memory_id: ID of the memory to find connections for
+            limit: Maximum number of results
+            respect_permeability: If True, filters results based on compartment permeability.
+
+        Returns:
+            Memories sorted by connection strength, lowest first.
         """
+        fetch_limit = limit * 3 if respect_permeability else limit
         query = """
         MATCH (m:Memory)-[r:RELATES_TO]->(related:Memory)
         WHERE m.id = $memory_id
-        RETURN related.id AS id, related.summary AS summary, r.strength AS strength
+        RETURN related.id AS id, related.summary AS summary, r.strength AS strength,
+               r.permeability AS permeability
         ORDER BY r.strength ASC
         LIMIT $limit
         """
-        return self._run_query(query, {"memory_id": memory_id, "limit": limit})
+        results = self._run_query(query, {"memory_id": memory_id, "limit": fetch_limit})
+
+        if respect_permeability:
+            results = self._filter_by_permeability(memory_id, results)
+
+        return results[:limit]
 
     def get_all_connection_strengths(self) -> List[Dict]:
         """Get all memory-to-memory connections with their strengths.
@@ -1739,8 +2156,17 @@ class MemoryGraphClient:
         """
         return self._run_query(query, {"term": search_term, "limit": limit})
 
-    def get_related_memories(self, memory_id: str, hops: int = 2, limit: int = 20) -> List[Dict]:
-        """Get memories related to a given memory through shared concepts/keywords/topics."""
+    def get_related_memories(self, memory_id: str, hops: int = 2, limit: int = 20,
+                             respect_permeability: bool = True) -> List[Dict]:
+        """Get memories related to a given memory through shared concepts/keywords/topics.
+
+        Args:
+            memory_id: ID of the memory to find relations for
+            hops: Number of relationship hops (currently only used for direct relations)
+            limit: Maximum number of results
+            respect_permeability: If True, filters results based on compartment permeability.
+                                 Only returns memories whose data can flow to the requester.
+        """
         # KùzuDB doesn't support variable-length paths the same way, so we use a simpler approach
         # Find memories that share concepts, keywords, or topics with the given memory
         query = """
@@ -1751,10 +2177,12 @@ class MemoryGraphClient:
                related.accessCount AS accessCount, related.confidence AS confidence
         LIMIT $limit
         """
-        results = self._run_query(query, {"id": memory_id, "limit": limit})
+        # Request more than needed to account for permeability filtering
+        fetch_limit = limit * 3 if respect_permeability else limit
+        results = self._run_query(query, {"id": memory_id, "limit": fetch_limit})
 
         # Also check keyword relationships
-        if len(results) < limit:
+        if len(results) < fetch_limit:
             query2 = """
             MATCH (m:Memory {id: $id})-[:HAS_KEYWORD]->(k:Keyword)<-[:HAS_KEYWORD]-(related:Memory)
             WHERE related.id <> $id
@@ -1763,7 +2191,7 @@ class MemoryGraphClient:
                    related.accessCount AS accessCount, related.confidence AS confidence
             LIMIT $remaining
             """
-            remaining = limit - len(results)
+            remaining = fetch_limit - len(results)
             keyword_results = self._run_query(query2, {"id": memory_id, "remaining": remaining})
             # Merge results avoiding duplicates
             seen_ids = {r["id"] for r in results}
@@ -1772,7 +2200,27 @@ class MemoryGraphClient:
                     results.append(r)
                     seen_ids.add(r["id"])
 
+        # Filter by permeability if requested
+        if respect_permeability:
+            results = self._filter_by_permeability(memory_id, results)
+
         return results[:limit]
+
+    def _filter_by_permeability(self, requester_memory_id: str, results: List[Dict]) -> List[Dict]:
+        """Filter query results based on permeability rules.
+
+        Data flows FROM each result TO the requester, so:
+        - Result's compartment must allow OUTWARD flow
+        - Requester's compartment must allow INWARD flow
+        """
+        if not results:
+            return results
+
+        filtered = []
+        for r in results:
+            if self.can_data_flow(r["id"], requester_memory_id):
+                filtered.append(r)
+        return filtered
 
     def get_memories_by_concept(self, concept_name: str, limit: int = 20,
                                  apply_retrieval_effects: bool = True) -> List[Dict]:
@@ -1941,7 +2389,8 @@ class MemoryGraphClient:
             "Context": "MATCH (n:Context) RETURN n.id AS id, n.name AS name, n.type AS type, n.status AS status, n.created AS created",
             "Preference": "MATCH (n:Preference) RETURN n.id AS id, n.category AS category, n.preference AS preference, n.strength AS strength, n.created AS created",
             "TemporalMarker": "MATCH (n:TemporalMarker) RETURN n.id AS id, n.type AS type, n.description AS description, n.created AS created",
-            "Contradiction": "MATCH (n:Contradiction) RETURN n.id AS id, n.description AS description, n.status AS status, n.created AS created"
+            "Contradiction": "MATCH (n:Contradiction) RETURN n.id AS id, n.description AS description, n.status AS status, n.created AS created",
+            "Compartment": "MATCH (n:Compartment) RETURN n.id AS id, n.name AS name, n.permeability AS permeability, n.allowExternalConnections AS allowExternalConnections, n.description AS description, n.created AS created"
         }
 
         for node_type, query in node_queries.items():
@@ -1959,7 +2408,7 @@ class MemoryGraphClient:
         node_types = [
             "Memory", "Concept", "Keyword", "Topic", "Entity", "Source",
             "Decision", "Goal", "Question", "Context", "Preference",
-            "TemporalMarker", "Contradiction"
+            "TemporalMarker", "Contradiction", "Compartment"
         ]
 
         for node_type in node_types:
@@ -1987,14 +2436,18 @@ class MemoryGraphClient:
         lines.append("")
 
         # Node listings
-        for node_type in ["Concept", "Topic", "Keyword", "Entity", "Goal", "Question", "Context", "Preference"]:
+        for node_type in ["Compartment", "Concept", "Topic", "Keyword", "Entity", "Goal", "Question", "Context", "Preference"]:
             if node_type in summary and summary[node_type]:
                 plural = "ies" if node_type.endswith("y") else "s"
                 label = node_type[:-1] + plural if node_type.endswith("y") else node_type + "s"
                 lines.append(f"\n## {label}\n")
                 for item in summary[node_type]:
                     node_id = str(item.get('id', 'N/A'))[:8]
-                    if node_type == "Concept":
+                    if node_type == "Compartment":
+                        perm = item.get('permeability', 'open')
+                        ext = "yes" if item.get('allowExternalConnections', True) else "no"
+                        lines.append(f"- `{node_id}` **{item.get('name', 'N/A')}** ({perm}, ext:{ext})")
+                    elif node_type == "Concept":
                         lines.append(f"- `{node_id}` **{item.get('name', 'N/A')}**")
                     elif node_type == "Topic":
                         lines.append(f"- `{node_id}` **{item.get('name', 'N/A')}**")
@@ -2022,7 +2475,7 @@ class MemoryGraphClient:
         node_types = [
             "Memory", "Concept", "Keyword", "Topic", "Entity", "Source",
             "Decision", "Goal", "Question", "Context", "Preference",
-            "TemporalMarker", "Contradiction"
+            "TemporalMarker", "Contradiction", "Compartment"
         ]
         for node_type in node_types:
             try:
@@ -2048,12 +2501,26 @@ def quick_store_memory(
     keywords: List[str] = None,
     topics: List[str] = None,
     entities: List[tuple] = None,  # List of (name, type) tuples
-    confidence: float = 1.0
+    confidence: float = 1.0,
+    compartment_id: str = None  # Optional compartment (None uses active compartment)
 ) -> str:
-    """Quickly store a memory with its associations."""
-    # Create the memory
+    """Quickly store a memory with its associations.
+
+    Args:
+        client: MemoryGraphClient instance
+        content: Full memory content
+        summary: Brief summary of the memory
+        concepts: List of concept names to associate
+        keywords: List of keyword terms to associate
+        topics: List of topic names to associate
+        entities: List of (name, type) tuples for entities
+        confidence: Confidence level (0-1)
+        compartment_id: Optional compartment ID. If None, uses client's active compartment.
+                       Pass empty string "" to create without compartment.
+    """
+    # Create the memory (will use active compartment if compartment_id is None)
     memory = Memory(content=content, summary=summary, confidence=confidence)
-    memory_id = client.create_memory(memory)
+    memory_id = client.create_memory(memory, compartment_id=compartment_id)
 
     # Link concepts
     if concepts:

@@ -6,6 +6,7 @@ A graph-based memory system for AI agents that stores memories as nodes with ric
 
 - **Graph-based Memory**: Store memories as interconnected nodes with relationships
 - **Brain Plasticity**: Weighted connections that strengthen/weaken over time (Hebbian learning)
+- **Compartmentalization**: Isolate memories with controlled boundaries and data flow direction
 - **Multi-level Organization**: Concepts, keywords, topics, and entities
 - **Associative Recall**: Find related memories through graph traversal
 - **Contradiction Detection**: Track and resolve conflicting information
@@ -77,11 +78,12 @@ python src/test_memory_system.py
 
 ### Node Types
 
-The system uses 13 different node types:
+The system uses 14 different node types:
 
 | Node | Purpose |
 |------|---------|
 | **Memory** | Core memory content with summary, confidence, and access tracking |
+| **Compartment** | Named boundary for memory isolation with permeability control |
 | **Concept** | Abstract ideas (e.g., "machine learning", "user experience") |
 | **Keyword** | Specific terms for precise matching |
 | **Topic** | Broad categories for organization |
@@ -101,7 +103,8 @@ Memories connect to other nodes through weighted relationships:
 - `HAS_CONCEPT` (relevance), `HAS_KEYWORD`, `BELONGS_TO` (isPrimary)
 - `MENTIONS` (role), `FROM_SOURCE` (excerpt), `IN_CONTEXT`
 - `INFORMED` (decision), `SUPPORTS` (strength), `PARTIALLY_ANSWERS` (completeness)
-- `RELATES_TO` (strength, relType) - memory-to-memory with synaptic-like weights
+- `RELATES_TO` (strength, relType, permeability) - memory-to-memory with synaptic-like weights
+- `IN_COMPARTMENT` - memory belongs to a compartment
 - `CONFLICTS_WITH`, `SUPERSEDES` (contradictions)
 
 ### Brain Plasticity
@@ -188,6 +191,48 @@ client.load_plasticity_config("my_config.json")
 
 See [Plasticity Configuration Guide](docs/plasticity-config.md) for full parameter reference.
 
+### Compartmentalization
+
+Compartments provide memory isolation with controlled data flow:
+
+```python
+from memory_client import MemoryGraphClient, Compartment, Permeability
+
+client = MemoryGraphClient()
+
+# Create a secure compartment that can read external data but doesn't leak
+secure = Compartment(
+    name="Project Q",
+    permeability=Permeability.OSMOTIC_INWARD,
+    allow_external_connections=False  # No organic links to outside
+)
+compartment_id = client.create_compartment(secure)
+
+# Set active compartment - all new memories go here
+client.set_active_compartment(compartment_id)
+
+# Memories are automatically in the compartment
+memory_id = quick_store_memory(client, content="Secret data", summary="Secret")
+
+# Clear active compartment
+client.set_active_compartment(None)
+```
+
+**Permeability controls data flow direction:**
+
+| Permeability | Inward | Outward | Use Case |
+|--------------|--------|---------|----------|
+| `OPEN` | Yes | Yes | Default - no restrictions |
+| `CLOSED` | No | No | Complete isolation |
+| `OSMOTIC_INWARD` | Yes | No | Can read external, doesn't leak |
+| `OSMOTIC_OUTWARD` | No | Yes | Shares out, not influenced by external |
+
+**Two independent controls:**
+1. **Connection Formation**: Whether new organic connections can form across boundaries
+2. **Query Traversal**: Whether existing connections can be traversed during queries
+
+See [Compartmentalization Guide](docs/compartmentalization.md) for full documentation.
+
 ## Why KùzuDB?
 
 This project uses [KùzuDB](https://kuzudb.com/) as its graph database because:
@@ -202,6 +247,8 @@ This project uses [KùzuDB](https://kuzudb.com/) as its graph database because:
 
 - [Schema Details](docs/schema.md) - Full schema documentation
 - [Design Decisions](docs/design-decisions.md) - Architectural rationale
+- [Plasticity Configuration Guide](docs/plasticity-config.md) - Tuneable plasticity parameters
+- [Compartmentalization Guide](docs/compartmentalization.md) - Memory isolation and data flow control
 
 ## Requirements
 

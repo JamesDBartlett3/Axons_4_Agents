@@ -18,9 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from memory_client import (
     MemoryGraphClient,
     Memory, Concept, Keyword, Topic, Entity, Source,
-    Decision, Goal, Question, Context, Preference,
+    Decision, Goal, Question, Context, Preference, Compartment,
     EntityType, SourceType, GoalStatus, QuestionStatus, ContextType,
-    PlasticityConfig, Curve,
+    PlasticityConfig, Curve, Permeability,
     quick_store_memory
 )
 
@@ -711,6 +711,448 @@ def test_plasticity_presets():
         return False
 
 
+def test_compartment_basic():
+    """Test basic compartment creation and memory assignment."""
+    print("\nTesting compartment basics...")
+    try:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
+            # Create a compartment
+            comp = Compartment(
+                name="Project Alpha",
+                permeability=Permeability.CLOSED,
+                allow_external_connections=False,
+                description="A secure project compartment"
+            )
+            comp_id = client.create_compartment(comp)
+            print(f"  Created compartment: {comp_id[:8]}")
+
+            # Verify compartment was created
+            retrieved = client.get_compartment(comp_id)
+            assert retrieved is not None, "Should retrieve compartment"
+            assert retrieved["name"] == "Project Alpha", "Name should match"
+            assert retrieved["permeability"] == "closed", "Permeability should be closed"
+            print(f"  Retrieved compartment: {retrieved['name']}")
+
+            # Test get by name
+            by_name = client.get_compartment_by_name("Project Alpha")
+            assert by_name is not None, "Should find by name"
+            assert by_name["id"] == comp_id, "IDs should match"
+            print("  Get by name: OK")
+
+            # Create memory in compartment
+            m1 = quick_store_memory(
+                client, content="Secret data", summary="Secret",
+                compartment_id=comp_id
+            )
+
+            # Verify memory is in compartment
+            mem_comp = client.get_memory_compartment(m1)
+            assert mem_comp is not None, "Memory should have compartment"
+            assert mem_comp["id"] == comp_id, "Should be in correct compartment"
+            print("  Memory in compartment: OK")
+
+            # Test active compartment
+            client.set_active_compartment(comp_id)
+            assert client.get_active_compartment() == comp_id, "Active should be set"
+
+            m2 = quick_store_memory(
+                client, content="Another secret", summary="Secret 2"
+            )
+            mem_comp2 = client.get_memory_compartment(m2)
+            assert mem_comp2 is not None, "Should use active compartment"
+            assert mem_comp2["id"] == comp_id, "Should be in active compartment"
+            print("  Active compartment: OK")
+
+            # Test get memories in compartment
+            memories = client.get_memories_in_compartment(comp_id)
+            assert len(memories) == 2, f"Should have 2 memories, got {len(memories)}"
+            print(f"  Memories in compartment: {len(memories)}")
+
+            # Test remove from compartment
+            client.remove_memory_from_compartment(m1)
+            mem_comp = client.get_memory_compartment(m1)
+            assert mem_comp is None, "Should be removed from compartment"
+            print("  Remove from compartment: OK")
+
+            # Test update compartment
+            client.update_compartment(comp_id, permeability=Permeability.OPEN)
+            updated = client.get_compartment(comp_id)
+            assert updated["permeability"] == "open", "Permeability should be updated"
+            print("  Update compartment: OK")
+
+        print("  Compartment basics: OK")
+        return True
+    except Exception as e:
+        print(f"  Compartment basics test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_compartment_connection_formation():
+    """Test that compartments control organic connection formation."""
+    print("\nTesting compartment connection formation...")
+    try:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
+            # Create a closed compartment that blocks external connections
+            closed_comp = Compartment(
+                name="Closed Project",
+                permeability=Permeability.CLOSED,
+                allow_external_connections=False
+            )
+            closed_id = client.create_compartment(closed_comp)
+
+            # Create an open compartment
+            open_comp = Compartment(
+                name="Open Project",
+                permeability=Permeability.OPEN,
+                allow_external_connections=True
+            )
+            open_id = client.create_compartment(open_comp)
+
+            # Create memories in each compartment
+            m_closed = quick_store_memory(
+                client, content="Closed memory", summary="Closed",
+                compartment_id=closed_id
+            )
+            m_open = quick_store_memory(
+                client, content="Open memory", summary="Open",
+                compartment_id=open_id
+            )
+            m_global = quick_store_memory(
+                client, content="Global memory", summary="Global",
+                compartment_id=""  # No compartment
+            )
+
+            # Test can_form_connection
+            # Same compartment - should allow
+            m_closed2 = quick_store_memory(
+                client, content="Another closed", summary="Closed 2",
+                compartment_id=closed_id
+            )
+            assert client.can_form_connection(m_closed, m_closed2), "Same compartment should allow"
+            print("  Same compartment: allowed")
+
+            # Closed to open - should block (closed doesn't allow external)
+            assert not client.can_form_connection(m_closed, m_open), "Closed to open should block"
+            print("  Closed to open: blocked")
+
+            # Closed to global - should block
+            assert not client.can_form_connection(m_closed, m_global), "Closed to global should block"
+            print("  Closed to global: blocked")
+
+            # Open to global - should allow (open allows external)
+            assert client.can_form_connection(m_open, m_global), "Open to global should allow"
+            print("  Open to global: allowed")
+
+            # Test Hebbian learning respects compartments
+            client.apply_hebbian_learning([m_closed, m_open], respect_compartments=True)
+            link_strength = client.get_memory_link_strength(m_closed, m_open)
+            assert link_strength is None, "Hebbian should not create cross-compartment link"
+            print("  Hebbian respects compartments: OK")
+
+            # But explicit linking can still work (with check_compartments=False)
+            result = client.link_memories(m_closed, m_open, check_compartments=True)
+            assert result == False, "link_memories with check should return False"
+            print("  Explicit link with check: blocked")
+
+            # Force link without check
+            result = client.link_memories(m_closed, m_open, check_compartments=False)
+            assert result == True, "link_memories without check should work"
+            link_strength = client.get_memory_link_strength(m_closed, m_open)
+            assert link_strength is not None, "Forced link should exist"
+            print("  Explicit link without check: allowed")
+
+        print("  Connection formation: OK")
+        return True
+    except Exception as e:
+        print(f"  Connection formation test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_compartment_permeability():
+    """Test permeability controls for data flow direction."""
+    print("\nTesting compartment permeability...")
+    try:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
+            # Test Permeability enum methods
+            assert Permeability.OPEN.allows_inward() == True
+            assert Permeability.OPEN.allows_outward() == True
+            assert Permeability.CLOSED.allows_inward() == False
+            assert Permeability.CLOSED.allows_outward() == False
+            assert Permeability.OSMOTIC_INWARD.allows_inward() == True
+            assert Permeability.OSMOTIC_INWARD.allows_outward() == False
+            assert Permeability.OSMOTIC_OUTWARD.allows_inward() == False
+            assert Permeability.OSMOTIC_OUTWARD.allows_outward() == True
+            print("  Permeability enum: OK")
+
+            # Create compartments with different permeabilities
+            # OSMOTIC_INWARD: can pull data in, but doesn't leak out
+            secure_comp = Compartment(
+                name="Secure",
+                permeability=Permeability.OSMOTIC_INWARD,
+                allow_external_connections=True  # Allow connections for testing
+            )
+            secure_id = client.create_compartment(secure_comp)
+
+            # OSMOTIC_OUTWARD: shares data out, but doesn't pull in
+            public_comp = Compartment(
+                name="Public",
+                permeability=Permeability.OSMOTIC_OUTWARD,
+                allow_external_connections=True
+            )
+            public_id = client.create_compartment(public_comp)
+
+            # Create memories
+            m_secure = quick_store_memory(
+                client, content="Secure data", summary="Secure",
+                compartment_id=secure_id
+            )
+            m_public = quick_store_memory(
+                client, content="Public data", summary="Public",
+                compartment_id=public_id
+            )
+            m_global = quick_store_memory(
+                client, content="Global data", summary="Global",
+                compartment_id=""
+            )
+
+            # Create explicit links
+            client.link_memories(m_secure, m_public)
+            client.link_memories(m_public, m_global)
+
+            # Test can_data_flow
+            # From public to secure (secure pulls in) - should work
+            assert client.can_data_flow(m_public, m_secure), "Secure should pull from public"
+            print("  Secure pulls from public: allowed")
+
+            # From secure to public (secure leaking out) - should block
+            assert not client.can_data_flow(m_secure, m_public), "Secure should not leak to public"
+            print("  Secure leaking to public: blocked")
+
+            # From global to public (public pulling in) - should block (public is OSMOTIC_OUTWARD)
+            assert not client.can_data_flow(m_global, m_public), "Public should not pull from global"
+            print("  Public pulling from global: blocked")
+
+            # From public to global (public sharing out) - should work
+            assert client.can_data_flow(m_public, m_global), "Public should share to global"
+            print("  Public sharing to global: allowed")
+
+        print("  Permeability: OK")
+        return True
+    except Exception as e:
+        print(f"  Permeability test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_compartment_query_filtering():
+    """Test that queries respect permeability rules."""
+    print("\nTesting compartment query filtering...")
+    try:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
+            # Create a secure compartment (OSMOTIC_INWARD - can see out, outsiders can't see in)
+            secure_comp = Compartment(
+                name="Secure Zone",
+                permeability=Permeability.OSMOTIC_INWARD,
+                allow_external_connections=True
+            )
+            secure_id = client.create_compartment(secure_comp)
+
+            # Create memories with shared concept
+            m_secure = quick_store_memory(
+                client, content="Secret project data", summary="Secret",
+                concepts=["project"], compartment_id=secure_id
+            )
+            m_global = quick_store_memory(
+                client, content="Public project info", summary="Public",
+                concepts=["project"], compartment_id=""
+            )
+
+            # Create explicit connections
+            client.link_memories(m_secure, m_global)
+            client.link_memories(m_global, m_secure)
+
+            # Query from secure memory should see global (pulling data in)
+            related_from_secure = client.get_related_memories(
+                m_secure, respect_permeability=True
+            )
+            global_ids = [r["id"] for r in related_from_secure]
+            assert m_global in global_ids, "Secure should see global via shared concept"
+            print("  Query from secure sees global: OK")
+
+            # Query from global memory should NOT see secure (can't pull from secure)
+            related_from_global = client.get_related_memories(
+                m_global, respect_permeability=True
+            )
+            secure_ids = [r["id"] for r in related_from_global]
+            assert m_secure not in secure_ids, "Global should not see secure"
+            print("  Query from global doesn't see secure: OK")
+
+            # But with respect_permeability=False, it should see both
+            related_no_filter = client.get_related_memories(
+                m_global, respect_permeability=False
+            )
+            all_ids = [r["id"] for r in related_no_filter]
+            # Note: This depends on how get_related_memories finds relations
+            # It uses shared concepts, so it should find the secure memory
+            print(f"  Query without permeability filter: {len(related_no_filter)} results")
+
+        print("  Query filtering: OK")
+        return True
+    except Exception as e:
+        print(f"  Query filtering test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_compartment_connection_permeability():
+    """Test connection-level permeability overrides."""
+    print("\nTesting connection permeability...")
+    try:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
+            # Create memories (no compartments for simplicity)
+            m1 = quick_store_memory(
+                client, content="Memory 1", summary="M1", compartment_id=""
+            )
+            m2 = quick_store_memory(
+                client, content="Memory 2", summary="M2", compartment_id=""
+            )
+
+            # Create connection with specific permeability
+            client.link_memories(m1, m2, permeability=Permeability.OSMOTIC_INWARD)
+
+            # Verify permeability was set
+            perm = client.get_connection_permeability(m1, m2)
+            assert perm == "osmotic_inward", f"Permeability should be osmotic_inward, got {perm}"
+            print(f"  Initial permeability: {perm}")
+
+            # Update permeability
+            client.set_connection_permeability(m1, m2, Permeability.CLOSED)
+            perm = client.get_connection_permeability(m1, m2)
+            assert perm == "closed", f"Permeability should be closed, got {perm}"
+            print(f"  Updated permeability: {perm}")
+
+            # Test that connection permeability affects data flow
+            # With CLOSED, data should not flow
+            assert not client.can_data_flow(m2, m1, connection_permeability="closed"), \
+                "Closed connection should block data flow"
+            print("  Closed connection blocks flow: OK")
+
+            # Set to OPEN
+            client.set_connection_permeability(m1, m2, Permeability.OPEN)
+            assert client.can_data_flow(m2, m1, connection_permeability="open"), \
+                "Open connection should allow data flow"
+            print("  Open connection allows flow: OK")
+
+        print("  Connection permeability: OK")
+        return True
+    except Exception as e:
+        print(f"  Connection permeability test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_memory_permeability():
+    """Test memory-level permeability controls."""
+    print("\nTesting memory permeability...")
+    try:
+        with MemoryGraphClient(db_path=get_test_db_path()) as client:
+            client.initialize_schema()
+
+            # Create memory with specific permeability
+            closed_mem = Memory(
+                content="Closed memory",
+                summary="Closed",
+                permeability=Permeability.CLOSED
+            )
+            m_closed = client.create_memory(closed_mem)
+
+            outward_mem = Memory(
+                content="Outward memory",
+                summary="Outward",
+                permeability=Permeability.OSMOTIC_OUTWARD
+            )
+            m_outward = client.create_memory(outward_mem)
+
+            inward_mem = Memory(
+                content="Inward memory",
+                summary="Inward",
+                permeability=Permeability.OSMOTIC_INWARD
+            )
+            m_inward = client.create_memory(inward_mem)
+
+            open_mem = Memory(
+                content="Open memory",
+                summary="Open",
+                permeability=Permeability.OPEN
+            )
+            m_open = client.create_memory(open_mem)
+
+            # Create links between them
+            client.link_memories(m_open, m_closed)
+            client.link_memories(m_open, m_outward)
+            client.link_memories(m_open, m_inward)
+
+            # Test get_memory_permeability
+            assert client.get_memory_permeability(m_closed) == "closed"
+            assert client.get_memory_permeability(m_outward) == "osmotic_outward"
+            assert client.get_memory_permeability(m_inward) == "osmotic_inward"
+            assert client.get_memory_permeability(m_open) == "open"
+            print("  Get permeability: OK")
+
+            # Test can_data_flow with memory-level permeability
+            # CLOSED memory: nothing in or out
+            assert not client.can_data_flow(m_closed, m_open), "Closed should not flow out"
+            assert not client.can_data_flow(m_open, m_closed), "Closed should not accept in"
+            print("  Closed memory blocks all: OK")
+
+            # OSMOTIC_OUTWARD: data flows OUT, not in
+            assert client.can_data_flow(m_outward, m_open), "Outward should flow out"
+            assert not client.can_data_flow(m_open, m_outward), "Outward should not accept in"
+            print("  Osmotic outward: flows out only: OK")
+
+            # OSMOTIC_INWARD: data flows IN, not out
+            assert not client.can_data_flow(m_inward, m_open), "Inward should not flow out"
+            assert client.can_data_flow(m_open, m_inward), "Inward should accept in"
+            print("  Osmotic inward: flows in only: OK")
+
+            # OPEN: bidirectional
+            assert client.can_data_flow(m_open, m_inward), "Open to inward should work"
+            assert client.can_data_flow(m_outward, m_open), "Outward to open should work"
+            print("  Open: bidirectional: OK")
+
+            # Test set_memory_permeability
+            client.set_memory_permeability(m_closed, Permeability.OPEN)
+            assert client.get_memory_permeability(m_closed) == "open"
+            # Now data should flow
+            assert client.can_data_flow(m_closed, m_open), "Updated to open should flow"
+            print("  Set permeability: OK")
+
+        print("  Memory permeability: OK")
+        return True
+    except Exception as e:
+        print(f"  Memory permeability test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def cleanup_test_data():
     """Remove all test data from the database."""
     print("\nCleaning up test data...")
@@ -754,6 +1196,12 @@ def main():
         results["plasticity_learning_rate"] = test_plasticity_learning_rate()
         results["plasticity_maintenance"] = test_plasticity_maintenance()
         results["plasticity_presets"] = test_plasticity_presets()
+        results["compartment_basic"] = test_compartment_basic()
+        results["compartment_connection"] = test_compartment_connection_formation()
+        results["compartment_permeability"] = test_compartment_permeability()
+        results["compartment_query"] = test_compartment_query_filtering()
+        results["compartment_conn_perm"] = test_compartment_connection_permeability()
+        results["memory_permeability"] = test_memory_permeability()
         results["directory"] = test_directory_export()
 
     # Always cleanup
