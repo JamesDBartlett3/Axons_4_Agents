@@ -1,6 +1,6 @@
 # Memory Graph Directory
 
-Last updated: 2026-02-06T13:32:10.891964
+Last updated: 2026-02-06T13:33:57.085985
 
 ## Node Counts
 
@@ -21,35 +21,35 @@ Last updated: 2026-02-06T13:32:10.891964
 
 ## Concepts
 
-- `c28d86bf` **graph database**
-- `2df60210` **data persistence**
-- `1cfc6039` **cross-platform**
-- `335bf7f4` **architecture**
+- `3b108f83` **graph database**
+- `e0713c67` **data persistence**
+- `dfce5c5f` **cross-platform**
+- `f26335ba` **architecture**
 
 ## Topics
 
-- `551f48b9` **Technology Preferences**
-- `e7b1c36d` **Software Architecture**
-- `8d279f6a` **Technology Decisions**
+- `7f51b449` **Technology Preferences**
+- `4794b79e` **Software Architecture**
+- `35a7157a` **Technology Decisions**
 
 ## Keywords
 
-- `0f6a1adc` kuzu
-- `5bcd936e` embedded
-- `8ad30b11` simple
-- `6d5a4978` memory system
-- `2b6a5d0c` pip install
-- `07f0678d` comparison
+- `8cb2efef` kuzu
+- `e21f6b04` embedded
+- `8fa099e4` simple
+- `c45f3586` memory system
+- `e68bfebe` pip install
+- `615dc3ef` comparison
 
 ## Entities
 
-- `8adf9d0e` **User** (person)
-- `92038693` **KùzuDB** (technology)
+- `8d1d1375` **User** (person)
+- `82ec318c` **KùzuDB** (technology)
 
 ## Goals
 
-- `dda8e8e9` [active] Build a comprehensive memory system for AI agents
+- `835c3568` [active] Build a comprehensive memory system for AI agents
 
 ## Questions
 
-- `f9d63b6b` [open] What additional node types might be useful for the
+- `671c794e` [open] What additional node types might be useful for the

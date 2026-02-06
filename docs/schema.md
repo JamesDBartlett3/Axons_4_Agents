@@ -348,3 +348,59 @@ WHERE m2.id <> $memoryId
 RETURN DISTINCT m2
 LIMIT 20
 ```
+
+---
+
+## Plasticity Operations
+
+The system supports brain-like learning through weighted relationships.
+
+### Strengthen Connection (Hebbian Learning)
+
+```cypher
+MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
+WHERE m1.id = $id1 AND m2.id = $id2
+SET r.strength = CASE
+    WHEN r.strength + $amount > 1.0 THEN 1.0
+    ELSE r.strength + $amount
+END
+```
+
+### Weaken Connection (Synaptic Depression)
+
+```cypher
+MATCH (m1:Memory)-[r:RELATES_TO]->(m2:Memory)
+WHERE m1.id = $id1 AND m2.id = $id2
+SET r.strength = CASE
+    WHEN r.strength - $amount < 0.0 THEN 0.0
+    ELSE r.strength - $amount
+END
+```
+
+### Decay Weak Connections
+
+```cypher
+MATCH ()-[r:RELATES_TO]->()
+WHERE r.strength < $threshold AND r.strength > 0
+SET r.strength = CASE
+    WHEN r.strength - $decay < 0.0 THEN 0.0
+    ELSE r.strength - $decay
+END
+```
+
+### Prune Dead Connections
+
+```cypher
+MATCH ()-[r:RELATES_TO]->()
+WHERE r.strength < $minStrength
+DELETE r
+```
+
+### Find Strong Associations
+
+```cypher
+MATCH (m:Memory {id: $memoryId})-[r:RELATES_TO]->(related:Memory)
+WHERE r.strength >= $minStrength
+RETURN related, r.strength AS strength
+ORDER BY r.strength DESC
+```

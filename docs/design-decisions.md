@@ -211,3 +211,56 @@ The same code works identically on:
 - Linux
 
 No platform-specific setup or workarounds required.
+
+## Brain Plasticity Model
+
+### The Biological Inspiration
+
+The human brain stores memories not as isolated units but as interconnected networks. Key features we emulate:
+
+1. **Weighted Connections**: Synapses have varying strengths - some connections are strong, others weak
+2. **Hebbian Learning**: "Neurons that fire together wire together" - co-activated memories strengthen their connection
+3. **Synaptic Depression**: Unused connections weaken over time
+4. **Synaptic Pruning**: Very weak connections are eventually removed
+
+### Implementation
+
+Every relationship between memories and other nodes carries properties:
+
+| Relationship | Key Property | Purpose |
+|--------------|--------------|---------|
+| `RELATES_TO` | `strength` (0-1) | Memory-to-memory connection weight |
+| `HAS_CONCEPT` | `relevance` (0-1) | How central the concept is to the memory |
+| `SUPPORTS` | `strength` (0-1) | How strongly memory supports a goal |
+| `PARTIALLY_ANSWERS` | `completeness` (0-1) | How much the memory answers a question |
+| `BELONGS_TO` | `isPrimary` | Whether this is the main topic |
+| `MENTIONS` | `role` | The entity's role (subject, tool, author) |
+
+### Plasticity Operations
+
+```python
+# Synaptic potentiation - strengthen a connection
+client.strengthen_memory_link(id1, id2, amount=0.1)
+
+# Synaptic depression - weaken a connection
+client.weaken_memory_link(id1, id2, amount=0.1)
+
+# Hebbian learning - strengthen all connections between co-accessed memories
+client.apply_hebbian_learning([id1, id2, id3])
+
+# Time-based decay - weaken connections below threshold
+client.decay_weak_connections(threshold=0.3, decay_amount=0.05)
+
+# Pruning - remove near-zero connections
+client.prune_dead_connections(min_strength=0.01)
+```
+
+### Why This Matters
+
+Without plasticity, all connections are equally weighted. This loses critical information:
+
+- **Relevance fades**: A memory that mentioned Python once shouldn't be as connected to the Python concept as a memory entirely about Python
+- **Associations emerge**: Memories frequently accessed together should become more strongly linked
+- **Noise reduction**: Weak, rarely-reinforced connections can be pruned to focus on what matters
+
+This model allows the memory system to learn and adapt based on actual usage patterns, not just initial storage.

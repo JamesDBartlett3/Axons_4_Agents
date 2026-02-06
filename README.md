@@ -5,6 +5,7 @@ A graph-based memory system for AI agents that stores memories as nodes with ric
 ## Features
 
 - **Graph-based Memory**: Store memories as interconnected nodes with relationships
+- **Brain Plasticity**: Weighted connections that strengthen/weaken over time (Hebbian learning)
 - **Multi-level Organization**: Concepts, keywords, topics, and entities
 - **Associative Recall**: Find related memories through graph traversal
 - **Contradiction Detection**: Track and resolve conflicting information
@@ -96,12 +97,36 @@ The system uses 13 different node types:
 
 ### Relationships
 
-Memories connect to other nodes through relationships like:
-- `HAS_CONCEPT`, `HAS_KEYWORD`, `BELONGS_TO` (topic)
-- `MENTIONS` (entity), `FROM_SOURCE`, `IN_CONTEXT`
-- `INFORMED` (decision), `SUPPORTS` (goal)
-- `RELATES_TO` (memory-to-memory)
+Memories connect to other nodes through weighted relationships:
+- `HAS_CONCEPT` (relevance), `HAS_KEYWORD`, `BELONGS_TO` (isPrimary)
+- `MENTIONS` (role), `FROM_SOURCE` (excerpt), `IN_CONTEXT`
+- `INFORMED` (decision), `SUPPORTS` (strength), `PARTIALLY_ANSWERS` (completeness)
+- `RELATES_TO` (strength, relType) - memory-to-memory with synaptic-like weights
 - `CONFLICTS_WITH`, `SUPERSEDES` (contradictions)
+
+### Brain Plasticity
+
+Relationship weights enable brain-like learning patterns:
+
+```python
+# Hebbian learning: memories accessed together strengthen their connection
+client.apply_hebbian_learning([memory_id_1, memory_id_2, memory_id_3])
+
+# Manual strengthening (synaptic potentiation)
+client.strengthen_memory_link(memory_id_1, memory_id_2, amount=0.1)
+
+# Weakening unused connections (synaptic depression)
+client.weaken_memory_link(memory_id_1, memory_id_2, amount=0.1)
+
+# Time-based decay of weak connections
+client.decay_weak_connections(threshold=0.3, decay_amount=0.05)
+
+# Prune near-zero connections (synaptic pruning)
+client.prune_dead_connections(min_strength=0.01)
+
+# Find strongly associated memories
+strong = client.get_strong_associations(memory_id, min_strength=0.7)
+```
 
 ## Why KùzuDB?
 
