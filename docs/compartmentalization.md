@@ -149,6 +149,202 @@ client.add_memory_to_compartment(mem_id, secure_comp)
 # But cannot send data out (Secure blocks outward)
 ```
 
+## Setting Permeability
+
+Permeability can be set at three levels: memory, compartment, and connection. Each level uses the same `Permeability` enum.
+
+### Setting Memory Permeability
+
+```python
+from memory_client import MemoryGraphClient, Memory, Permeability
+
+client = MemoryGraphClient()
+client.initialize_schema()
+
+# Option 1: Set when creating the memory
+secret_memory = Memory(
+    content="API key: sk-abc123",
+    summary="API credentials",
+    permeability=Permeability.CLOSED  # No data in or out
+)
+mem_id = client.create_memory(secret_memory)
+
+# Option 2: Update after creation (single memory)
+client.set_memory_permeability(mem_id, Permeability.OSMOTIC_OUTWARD)
+
+# Option 3: Update multiple memories at once
+client.set_memory_permeability([mem1, mem2, mem3], Permeability.OSMOTIC_INWARD)
+
+# Check current permeability
+perm = client.get_memory_permeability(mem_id)  # Returns "osmotic_outward"
+```
+
+### Setting Compartment Permeability
+
+```python
+from memory_client import Compartment, Permeability
+
+# Set when creating the compartment
+secure_project = Compartment(
+    name="Project X",
+    permeability=Permeability.OSMOTIC_INWARD,
+    allow_external_connections=False
+)
+comp_id = client.create_compartment(secure_project)
+
+# Update existing compartment
+client.update_compartment(comp_id, permeability=Permeability.CLOSED)
+```
+
+### Setting Connection Permeability
+
+```python
+# Set when creating the connection
+client.link_memories(mem1, mem2, permeability=Permeability.OSMOTIC_INWARD)
+
+# Update existing connection
+client.set_connection_permeability(mem1, mem2, Permeability.OPEN)
+
+# Check current permeability
+perm = client.get_connection_permeability(mem1, mem2)
+```
+
+## How Permeability Works: Practical Examples
+
+### Example 1: Protecting Sensitive Data (CLOSED)
+
+```python
+# Create a memory containing sensitive information
+credentials = Memory(
+    content="Database password: hunter2",
+    summary="DB credentials",
+    permeability=Permeability.CLOSED
+)
+cred_id = client.create_memory(credentials)
+
+# Create a normal memory and link them
+notes = Memory(content="Remember to rotate credentials", summary="Note")
+note_id = client.create_memory(notes)
+client.link_memories(cred_id, note_id)
+
+# Query behavior:
+# - Queries starting from notes CANNOT see credentials (blocked inward to cred)
+# - Queries starting from credentials CANNOT see notes (blocked outward from cred)
+assert not client.can_data_flow(cred_id, note_id)  # Blocked: cred won't send data out
+assert not client.can_data_flow(note_id, cred_id)  # Blocked: cred won't accept data in
+```
+
+### Example 2: Read-Only Knowledge Base (OSMOTIC_OUTWARD)
+
+```python
+# Create a compartment for reference documentation
+docs_comp = Compartment(
+    name="Documentation",
+    permeability=Permeability.OSMOTIC_OUTWARD,  # Share out, don't pull in
+    allow_external_connections=True
+)
+docs_id = client.create_compartment(docs_comp)
+
+# Add documentation memories
+client.set_active_compartment(docs_id)
+api_docs = quick_store_memory(client, content="API returns JSON", summary="API docs")
+schema_docs = quick_store_memory(client, content="Users table has id, name", summary="Schema")
+client.set_active_compartment(None)
+
+# Create a working memory outside the compartment
+work_mem = quick_store_memory(client, content="Working on API integration", summary="Work")
+client.link_memories(work_mem, api_docs)
+
+# Query behavior:
+# - work_mem CAN see api_docs (docs share outward)
+# - api_docs CANNOT see work_mem (docs don't pull inward)
+assert client.can_data_flow(api_docs, work_mem)      # Allowed: docs share out
+assert not client.can_data_flow(work_mem, api_docs)  # Blocked: docs won't pull in
+```
+
+### Example 3: Secure Project (OSMOTIC_INWARD)
+
+```python
+# Create a compartment for confidential project work
+project_comp = Compartment(
+    name="Project Alpha",
+    permeability=Permeability.OSMOTIC_INWARD,  # Pull in, don't leak out
+    allow_external_connections=False
+)
+project_id = client.create_compartment(project_comp)
+
+# Add project memories
+client.set_active_compartment(project_id)
+design = quick_store_memory(client, content="Secret architecture design", summary="Design")
+client.set_active_compartment(None)
+
+# Create external reference memory
+public_ref = quick_store_memory(client, content="Industry best practices", summary="Reference")
+
+# Query behavior:
+# - design CAN see public_ref (project can pull in external knowledge)
+# - public_ref CANNOT see design (project doesn't leak)
+assert client.can_data_flow(public_ref, design)      # Allowed: project pulls in
+assert not client.can_data_flow(design, public_ref)  # Blocked: project won't leak
+```
+
+### Example 4: Layered Security with Multiple Levels
+
+```python
+# Scenario: Memory in secure compartment with connection-level override
+
+# Create secure compartment
+secure = Compartment(name="Secure", permeability=Permeability.OSMOTIC_INWARD)
+secure_id = client.create_compartment(secure)
+
+# Create memories
+internal = quick_store_memory(client, content="Internal data", summary="Internal",
+                               compartment_id=secure_id)
+external = quick_store_memory(client, content="External data", summary="External",
+                               compartment_id="")
+
+# Default: internal can see external, external cannot see internal
+assert client.can_data_flow(external, internal)      # Allowed by compartment
+assert not client.can_data_flow(internal, external)  # Blocked by compartment
+
+# Create a special "approved export" connection with OPEN permeability
+client.link_memories(internal, external, permeability=Permeability.OPEN)
+
+# Connection permeability alone doesn't override compartment!
+# The compartment still blocks because fail-safe requires ALL layers to allow
+assert not client.can_data_flow(internal, external)  # Still blocked by compartment
+
+# To allow export, you must change the compartment OR memory permeability
+client.set_memory_permeability(internal, Permeability.OPEN)
+assert client.can_data_flow(internal, external)  # Now allowed (memory overrides)
+```
+
+### Example 5: Fail-Safe with Overlapping Compartments
+
+```python
+# Memory in multiple compartments - most restrictive wins
+
+open_comp = Compartment(name="Open", permeability=Permeability.OPEN)
+open_id = client.create_compartment(open_comp)
+
+restricted = Compartment(name="Restricted", permeability=Permeability.OSMOTIC_INWARD)
+restricted_id = client.create_compartment(restricted)
+
+# Create memory and add to both compartments
+dual_mem = quick_store_memory(client, content="Dual membership", summary="Dual",
+                               compartment_id="")
+client.add_memory_to_compartment(dual_mem, open_id)
+client.add_memory_to_compartment(dual_mem, restricted_id)
+
+other_mem = quick_store_memory(client, content="Other data", summary="Other",
+                                compartment_id="")
+
+# Even though Open allows outward, Restricted blocks it
+# Fail-safe: ANY compartment blocking = blocked
+assert not client.can_data_flow(dual_mem, other_mem)  # Blocked by Restricted
+assert client.can_data_flow(other_mem, dual_mem)      # Allowed (both allow inward)
+```
+
 ## Connection Formation Rules
 
 When `allow_external_connections=False`:
@@ -167,52 +363,16 @@ result = client.link_memories(mem1, mem2, check_compartments=True)
 client.link_memories(mem1, mem2, check_compartments=False)
 ```
 
-## Permeability Examples
+## Permeability Quick Reference
 
-### Secure Project (OSMOTIC_INWARD)
+| Permeability | Data Flows In? | Data Flows Out? | Typical Use Case |
+|--------------|----------------|-----------------|------------------|
+| `OPEN` | Yes | Yes | Default, unrestricted access |
+| `CLOSED` | No | No | Credentials, secrets, sandbox environments |
+| `OSMOTIC_INWARD` | Yes | No | Secure projects that need external references |
+| `OSMOTIC_OUTWARD` | No | Yes | Read-only knowledge bases, documentation |
 
-Can reference external knowledge but doesn't expose its data:
-
-```python
-secure_project = Compartment(
-    name="Secret Project",
-    permeability=Permeability.OSMOTIC_INWARD,
-    allow_external_connections=False
-)
-
-# Queries from inside can reach external memories
-# Queries from outside cannot see inside
-```
-
-### Knowledge Base (OSMOTIC_OUTWARD)
-
-Publishes data but isn't influenced by external sources:
-
-```python
-knowledge_base = Compartment(
-    name="Reference Data",
-    permeability=Permeability.OSMOTIC_OUTWARD,
-    allow_external_connections=False
-)
-
-# External queries can read this data
-# This compartment won't incorporate external data
-```
-
-### Isolated Environment (CLOSED)
-
-Complete isolation:
-
-```python
-sandbox = Compartment(
-    name="Sandbox",
-    permeability=Permeability.CLOSED,
-    allow_external_connections=False
-)
-
-# No data flows in or out
-# Memories inside can only connect to each other
-```
+**Remember**: "Inward" and "Outward" refer to data flow direction, not query direction. A query from memory A to memory B causes data to flow FROM B TO A.
 
 ## Memory-Level Permeability
 
