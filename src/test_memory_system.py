@@ -20,7 +20,7 @@ from memory_client import (
     Memory, Concept, Keyword, Topic, Entity, Source,
     Decision, Goal, Question, Context, Preference,
     EntityType, SourceType, GoalStatus, QuestionStatus, ContextType,
-    PlasticityConfig, DecayCurve, StrengtheningCurve,
+    PlasticityConfig, Curve,
     quick_store_memory
 )
 
@@ -226,12 +226,12 @@ def test_plasticity_config():
     try:
         # Test with custom plasticity config
         config = PlasticityConfig(
-            learning_rate=1.5,
-            base_strengthening_amount=0.2,
-            hebbian_learning_amount=0.1,
-            decay_curve=DecayCurve.EXPONENTIAL,
+            learning_rate=1.00000,
+            strengthen_amount=0.20000,
+            hebbian_amount=0.10000,
+            decay_curve=Curve.EXPONENTIAL,
             retrieval_strengthens=True,
-            retrieval_strengthening_amount=0.05,
+            retrieval_amount=0.05000,
         )
 
         with MemoryGraphClient(db_path=get_test_db_path(), plasticity_config=config) as client:

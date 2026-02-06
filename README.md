@@ -133,40 +133,43 @@ client.run_maintenance_cycle()
 
 ### Tuneable Plasticity Configuration
 
-All plasticity behavior is configurable via `PlasticityConfig`:
+All plasticity behavior is configurable via `PlasticityConfig`. All numeric values are 0-1 scale with 5 decimal precision.
 
 ```python
-from memory_client import MemoryGraphClient, PlasticityConfig, DecayCurve
+from memory_client import MemoryGraphClient, PlasticityConfig, Curve
 
 # Create custom configuration
 config = PlasticityConfig(
-    # Learning rates
-    learning_rate=1.0,              # Global multiplier (0=disabled, >1=faster)
+    # Master control (0=disabled, 1=normal)
+    learning_rate=1.00000,
 
-    # Strengthening
-    base_strengthening_amount=0.1,  # Base amount per strengthen call
-    max_strength=1.0,               # Connection strength ceiling
-    strengthening_curve="diminishing",  # Harder to strengthen already-strong links
+    # Context-specific amounts (each independent)
+    strengthen_amount=0.10000,   # For explicit strengthen operations
+    weaken_amount=0.10000,       # For explicit weaken operations
+    hebbian_amount=0.05000,      # For co-access strengthening
+    retrieval_amount=0.02000,    # For retrieval-induced changes
+    decay_amount=0.05000,        # For time-based decay
 
-    # Decay
-    decay_curve=DecayCurve.EXPONENTIAL,  # LINEAR, EXPONENTIAL, LOGARITHMIC, SIGMOID
-    base_decay_rate=0.05,           # Amount per decay cycle
-    decay_threshold=0.5,            # Only decay connections below this
-    decay_half_life=10,             # Cycles for strength to halve (exponential)
+    # Plasticity curve (applies to strengthen AND weaken symmetrically)
+    curve=Curve.EXPONENTIAL,     # LINEAR, EXPONENTIAL, LOGARITHMIC
+    curve_steepness=0.50000,     # 0.1=steep, 0.9=gentle
+
+    # Decay settings
+    decay_curve=Curve.EXPONENTIAL,
+    decay_threshold=0.50000,     # Only decay connections below this
+    decay_half_life=0.10000,     # 0.1 = 10 cycles to halve
 
     # Pruning
-    pruning_threshold=0.01,         # Remove connections at or below this
-    auto_prune=True,                # Prune during decay operations
+    prune_threshold=0.01000,     # Remove connections at or below this
+    auto_prune=True,
 
-    # Retrieval effects (accessing memory changes it)
-    retrieval_strengthens=True,     # Accessing a memory strengthens its links
-    retrieval_strengthening_amount=0.02,
-    retrieval_weakens_competitors=False,  # Weaken related but not-accessed memories
+    # Retrieval effects
+    retrieval_strengthens=True,
+    retrieval_weakens_competitors=False,
 
     # Hebbian learning
-    hebbian_learning_amount=0.05,   # Strengthen co-accessed memories
-    hebbian_creates_connections=True,  # Create links if none exist
-    hebbian_initial_strength=0.3,   # Initial strength for new links
+    hebbian_creates_connections=True,
+    hebbian_initial_strength=0.30000,
 )
 
 # Use custom config

@@ -13,18 +13,26 @@ The plasticity system emulates how biological neural networks learn:
 
 All behavior is controlled by `PlasticityConfig`, which can be customized or use presets.
 
+## Design Principles
+
+1. **Independent amounts**: Each operation context has its own base amount (not shared)
+2. **Unified curves**: The same `Curve` enum works for both plasticity and decay
+3. **0-1 scale**: All numeric values are floats between 0.00000 and 1.00000
+4. **Symmetrical operations**: Strengthening and weakening use the same curve (inverted)
+
 ## Quick Start
 
 ```python
-from memory_client import MemoryGraphClient, PlasticityConfig, DecayCurve
+from memory_client import MemoryGraphClient, PlasticityConfig, Curve
 
 # Default configuration (balanced)
 client = MemoryGraphClient()
 
 # Custom configuration
 config = PlasticityConfig(
-    learning_rate=1.5,
-    decay_curve=DecayCurve.EXPONENTIAL,
+    learning_rate=1.00000,
+    strengthen_amount=0.15000,
+    curve=Curve.EXPONENTIAL,
     retrieval_strengthens=True,
 )
 client = MemoryGraphClient(plasticity_config=config)
@@ -37,132 +45,79 @@ client = MemoryGraphClient(plasticity_config=PlasticityConfig.aggressive_learnin
 
 ## Configuration Parameters
 
-### Learning Rates
+### Master Control
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `learning_rate` | float | 1.0 | Global multiplier for all plasticity operations. Set to 0 to disable all automatic plasticity. Values > 1.0 accelerate learning. |
+| `learning_rate` | float | 1.00000 | Global multiplier for all operations. 0=disabled, 1=normal. |
 
-### Strengthening Parameters
+### Context-Specific Amounts
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `base_strengthening_amount` | float | 0.1 | Base amount to strengthen connections (before learning_rate multiplier) |
-| `max_strength` | float | 1.0 | Maximum connection strength (ceiling) |
-| `min_strength` | float | 0.0 | Minimum connection strength (floor) |
-| `strengthening_curve` | StrengtheningCurve | LINEAR | How strengthening scales with current strength |
-| `diminishing_factor` | float | 2.0 | For DIMINISHING curve: controls how much harder it is to strengthen strong connections |
-
-**Strengthening Curves:**
-- `LINEAR`: Constant strengthening regardless of current strength
-- `DIMINISHING`: Easier to strengthen weak connections, harder to strengthen strong ones (more realistic)
-- `ACCELERATING`: Easier to strengthen already-strong connections (rich-get-richer)
-
-### Weakening Parameters
+Each context has its own independent base amount. Effective amount = `context_amount * learning_rate * curve_adjustment`
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `base_weakening_amount` | float | 0.1 | Base amount to weaken connections |
-| `symmetric_curves` | bool | True | Whether weakening uses inverted strengthening curve |
+| `strengthen_amount` | float | 0.10000 | Base amount for explicit strengthen operations |
+| `weaken_amount` | float | 0.10000 | Base amount for explicit weaken operations |
+| `hebbian_amount` | float | 0.05000 | Base amount for co-access strengthening |
+| `retrieval_amount` | float | 0.02000 | Base amount for retrieval-induced changes |
+| `decay_amount` | float | 0.05000 | Base amount for time-based decay |
+
+### Strength Bounds
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_strength` | float | 1.00000 | Maximum connection strength (ceiling) |
+| `min_strength` | float | 0.00000 | Minimum connection strength (floor) |
+
+### Plasticity Curve
+
+The curve affects how current strength influences the rate of change. Applies symmetrically to strengthening (direct) and weakening (inverted).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `curve` | Curve | LINEAR | How current strength affects rate of change |
+| `curve_steepness` | float | 0.50000 | Controls curve intensity (0.1=steep, 0.9=gentle) |
+
+**Curve Types:**
+- `LINEAR`: Constant rate regardless of current strength
+- `EXPONENTIAL`: Harder to change connections near their limits
+- `LOGARITHMIC`: Easier to change connections near their limits
+
+### Time-Based Decay
+
+Decay is automatic weakening based on time/cycles, separate from explicit weaken operations.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `decay_curve` | Curve | EXPONENTIAL | How time affects decay rate |
+| `decay_half_life` | float | 0.10000 | Fraction of 100 cycles for half-life (0.1=10 cycles) |
+| `decay_threshold` | float | 0.50000 | Only connections below this decay |
+| `decay_all` | bool | False | If True, all connections decay regardless of strength |
+
+### Pruning
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `prune_threshold` | float | 0.01000 | Remove connections at or below this strength |
+| `auto_prune` | bool | True | Automatically prune during decay operations |
+
+### Retrieval Effects
+
+These parameters control how accessing/recalling a memory affects the graph.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `retrieval_strengthens` | bool | True | Accessing strengthens connections to the memory |
+| `retrieval_weakens_competitors` | bool | False | Also weaken related but not-accessed memories |
+| `competitor_distance` | float | 0.10000 | How much to scale competitor weakening |
 
 ### Hebbian Learning
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `hebbian_learning_amount` | float | 0.05 | Amount to strengthen when memories are co-accessed |
-| `hebbian_creates_connections` | bool | True | Create new connections if none exist when co-accessed |
-| `hebbian_initial_strength` | float | 0.3 | Initial strength for Hebbian-created connections |
-
-**Usage:**
-```python
-# When multiple memories are accessed together
-client.apply_hebbian_learning([memory_id_1, memory_id_2, memory_id_3])
-```
-
-### Decay Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `decay_curve` | DecayCurve | EXPONENTIAL | Mathematical function for decay |
-| `base_decay_rate` | float | 0.05 | Base decay rate per cycle |
-| `decay_threshold` | float | 0.5 | Connections below this threshold decay |
-| `decay_half_life` | int | 10 | For exponential: cycles until strength halves |
-| `decay_affects_all` | bool | False | If True, all connections decay (not just weak ones) |
-
-**Decay Curves:**
-- `LINEAR`: Constant decay rate over time
-- `EXPONENTIAL`: Fast initial decay, slowing over time (most realistic)
-- `LOGARITHMIC`: Slow initial decay, accelerating over time
-- `SIGMOID`: S-curve - slow start, fast middle, slow end
-
-**Half-Life Example:**
-With `decay_half_life=10`, a connection at strength 0.8 will be approximately:
-- 0.57 after 5 cycles
-- 0.40 after 10 cycles
-- 0.20 after 20 cycles
-
-### Pruning Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `pruning_threshold` | float | 0.01 | Connections at or below this are pruned |
-| `auto_prune` | bool | True | Automatically prune during decay operations |
-| `pruning_grace_period` | int | 0 | Minimum age before pruning (reserved for future) |
-
-### Retrieval-Induced Modification
-
-These parameters control how accessing/recalling a memory affects the graph - emulating how human memory recall actually changes the memory.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `retrieval_strengthens` | bool | True | Accessing a memory strengthens its connections |
-| `retrieval_strengthening_amount` | float | 0.02 | How much to strengthen on access |
-| `retrieval_weakens_competitors` | bool | False | Weaken related but not-accessed memories |
-| `competitor_weakening_amount` | float | 0.01 | How much to weaken competitors |
-| `competitor_hops` | int | 1 | How many relationship hops to consider as "competitors" |
-
-**Retrieval-Induced Forgetting:**
-When `retrieval_weakens_competitors=True`, accessing memory A will slightly weaken memories B and C that are connected to A but weren't accessed. This emulates the psychological phenomenon where recalling one memory can make related memories harder to recall.
-
-### Concept Relevance
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `concept_relevance_adjustment` | float | 0.1 | Base amount to adjust concept relevance |
-| `access_boosts_concept_relevance` | bool | True | Boost concept relevance when accessed via concept search |
-
-### Goal/Question Support
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `goal_progress_strengthening` | float | 0.1 | Strengthen memory-goal links when goal progresses |
-| `question_answer_strengthening` | float | 0.15 | Strengthen memory-question links when answered |
-
-### Time-Based Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `use_real_time_decay` | bool | False | Use wall-clock time instead of access cycles |
-| `hourly_decay_rate` | float | 0.001 | Decay rate per hour (if using real time) |
-
-### Relationship Type Weights
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `relationship_weights` | Dict[str, float] | {...} | Per-relationship-type multipliers |
-
-**Default weights (all 1.0):**
-```python
-{
-    "RELATES_TO": 1.0,
-    "HAS_CONCEPT": 1.0,
-    "HAS_KEYWORD": 1.0,
-    "BELONGS_TO": 1.0,
-    "MENTIONS": 1.0,
-    "SUPPORTS": 1.0,
-    "PARTIALLY_ANSWERS": 1.0,
-}
-```
+| `hebbian_creates_connections` | bool | True | Create new links between co-accessed memories |
+| `hebbian_initial_strength` | float | 0.30000 | Starting strength for newly created connections |
 
 ---
 
@@ -172,31 +127,32 @@ When `retrieval_weakens_competitors=True`, accessing memory A will slightly weak
 Balanced settings suitable for most use cases.
 
 ### `PlasticityConfig.aggressive_learning()`
-Fast adaptation with quick strengthening:
-- `learning_rate=1.5`
-- `base_strengthening_amount=0.15`
-- `hebbian_learning_amount=0.1`
-- `retrieval_strengthening_amount=0.05`
+Fast adaptation:
+- `strengthen_amount=0.15000`
+- `hebbian_amount=0.10000`
+- `retrieval_amount=0.05000`
+- `decay_threshold=0.30000`
 
 ### `PlasticityConfig.conservative_learning()`
-Slow, stable learning with gradual changes:
-- `learning_rate=0.5`
-- `base_strengthening_amount=0.05`
-- `decay_threshold=0.7`
-- `pruning_threshold=0.005`
+Slow, stable learning:
+- `learning_rate=0.50000`
+- `curve=Curve.EXPONENTIAL`
+- `decay_threshold=0.70000`
+- `prune_threshold=0.00500`
 
 ### `PlasticityConfig.no_plasticity()`
-Disables all automatic plasticity (manual operations only):
-- `learning_rate=0.0`
+Disables all automatic plasticity:
+- `learning_rate=0.00000`
 - `retrieval_strengthens=False`
 - `auto_prune=False`
 
 ### `PlasticityConfig.high_decay()`
-Aggressive forgetting for memory pressure scenarios:
-- `base_decay_rate=0.1`
-- `decay_threshold=0.7`
-- `decay_affects_all=True`
-- `decay_half_life=5`
+Aggressive forgetting:
+- `decay_amount=0.10000`
+- `decay_threshold=0.70000`
+- `decay_all=True`
+- `prune_threshold=0.05000`
+- `decay_half_life=0.05000`
 
 ---
 
@@ -206,10 +162,10 @@ Aggressive forgetting for memory pressure scenarios:
 
 ```python
 # Strengthen a specific connection
-client.strengthen_memory_link(id1, id2, amount=0.1)
+client.strengthen_memory_link(id1, id2, amount=0.10000)
 
 # Weaken a specific connection
-client.weaken_memory_link(id1, id2, amount=0.1)
+client.weaken_memory_link(id1, id2, amount=0.10000)
 
 # Get current strength
 strength = client.get_memory_link_strength(id1, id2)
@@ -244,7 +200,7 @@ client.run_aggressive_maintenance(cycles=5)
 # Get connection statistics
 stats = client.get_connection_statistics()
 print(f"Count: {stats['count']}")
-print(f"Average strength: {stats['avg']:.3f}")
+print(f"Average strength: {stats['avg']:.5f}")
 print(f"Below threshold: {stats['below_threshold']}")
 print(f"Pruning candidates: {stats['pruning_candidates']}")
 ```
@@ -270,21 +226,22 @@ client.load_plasticity_config("my_config.json")
 ## Example: Custom Memory Dynamics
 
 ```python
-from memory_client import MemoryGraphClient, PlasticityConfig, DecayCurve, StrengtheningCurve
+from memory_client import MemoryGraphClient, PlasticityConfig, Curve
 
 # Create a system that:
 # - Learns quickly but forgets slowly
 # - Makes it hard to strengthen already-strong connections
 # - Enables retrieval-induced forgetting
 config = PlasticityConfig(
-    learning_rate=1.2,
-    strengthening_curve=StrengtheningCurve.DIMINISHING,
-    diminishing_factor=3.0,  # Strong diminishing returns
-    decay_curve=DecayCurve.LOGARITHMIC,  # Slow decay
-    decay_half_life=20,  # Long half-life
+    learning_rate=1.00000,
+    strengthen_amount=0.15000,
+    curve=Curve.EXPONENTIAL,
+    curve_steepness=0.30000,  # Steeper curve = more diminishing returns
+    decay_curve=Curve.LOGARITHMIC,  # Slow decay
+    decay_half_life=0.20000,  # 20 cycles to halve
     retrieval_strengthens=True,
     retrieval_weakens_competitors=True,
-    competitor_weakening_amount=0.02,
+    competitor_distance=0.20000,
 )
 
 client = MemoryGraphClient(plasticity_config=config)
@@ -305,6 +262,6 @@ client = MemoryGraphClient(plasticity_config=config)
 5. **Save working configs**: Once you find settings that work, save them with `save_plasticity_config()`.
 
 6. **Consider your use case**:
-   - Long-term memory: Use conservative learning, slow decay
-   - Working memory: Use aggressive learning, fast decay
+   - Long-term memory: Use conservative learning, low decay
+   - Working memory: Use aggressive learning, high decay
    - Static knowledge base: Use `no_plasticity()` preset
