@@ -20,7 +20,7 @@ Transform the Memory Graph System into an MCP (Model Context Protocol) server so
 - **Framework**: FastMCP (Python) - handles protocol complexity with simple decorators
 - **Transport**: stdio for local development, HTTP for production
 - **Language**: Python (matches existing memory_client.py)
-- **Database**: KùzuDB (embedded, cross-platform)
+- **Database**: LadybugDB (embedded, cross-platform)
 
 ---
 
@@ -30,17 +30,17 @@ Transform the Memory Graph System into an MCP (Model Context Protocol) server so
 **Estimated Complexity**: Low
 
 - [ ] Install FastMCP: `pip install fastmcp`
-- [ ] Create `kuzu_mcp_server.py` in `src/` directory
+- [ ] Create `mcp_server.py` in `src/` directory
 - [ ] Set up basic server structure with FastMCP
 - [ ] Implement health check tool to verify connectivity
 - [ ] Test with stdio transport locally
 
 **Files to Create**:
-- `src/kuzu_mcp_server.py` - Main MCP server
+- `src/mcp_server.py` - Main MCP server
 
 **Verification**:
 ```powershell
-claude mcp add --transport stdio axons-memory -- python src/kuzu_mcp_server.py
+claude mcp add --transport stdio axons-memory -- python src/mcp_server.py
 claude mcp list  # Should show axons-memory
 ```
 
@@ -219,7 +219,7 @@ Expose read-only data as MCP resources:
 ```powershell
 claude mcp add --transport stdio axons-memory `
   --env AXONS_DB_PATH=C:\Users\James\.axons_memory_db `
-  -- python C:\Users\James\GitHub\Axons_4_Agents\src\kuzu_mcp_server.py
+  -- python C:\Users\James\GitHub\Axons_4_Agents\src\mcp_server.py
 ```
 
 ---
@@ -237,7 +237,7 @@ Axons_4_Agents/
 │   └── mcp-server-guide.md      # NEW: MCP-specific docs
 └── src/
     ├── memory_client.py
-    ├── kuzu_mcp_server.py       # NEW: MCP server
+    ├── mcp_server.py       # NEW: MCP server
     ├── test_memory_system.py
     ├── test_mcp_server.py       # NEW: MCP tests
     └── directory.md
@@ -249,7 +249,7 @@ Axons_4_Agents/
 
 ```
 # requirements.txt
-kuzu>=0.4.0
+real_ladybug>=0.14.0
 fastmcp>=0.1.0
 ```
 
@@ -330,7 +330,7 @@ if __name__ == "__main__":
 3. **Type hints are required** - FastMCP uses them to generate input schemas
 4. **Docstrings become tool descriptions** - Write clear, helpful descriptions
 5. **Handle errors gracefully** - Return meaningful error messages, don't crash
-6. **Test locally before registering** - Use `python kuzu_mcp_server.py` to check for syntax errors
+6. **Test locally before registering** - Use `python mcp_server.py` to check for syntax errors
 7. **Environment variables for config** - Use `AXONS_DB_PATH` instead of hardcoding
 
 ---
@@ -353,5 +353,5 @@ When complete, the following should work:
 - [FastMCP Documentation](https://gofastmcp.com/)
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
 - [Claude Code MCP Guide](https://docs.anthropic.com/en/docs/claude-code/mcp)
-- [KùzuDB Documentation](https://kuzudb.com/docs/)
+- [LadybugDB Documentation](https://docs.ladybugdb.com/)
 - [MCP Specification](https://modelcontextprotocol.io/specification/2025-11-25)

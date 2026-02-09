@@ -2,7 +2,44 @@
 
 > Upgrades the project from a single-file prototype into a production-quality, installable Python
 > package with bug fixes, performance improvements, full test coverage, and MCP server integration.
+> Phase 0 migrates from KùzuDB (archived Oct 2025) to LadybugDB (actively maintained fork).
 > Phases 1–4 harden the core; Phases 5–6 build the MCP server on a solid foundation.
+
+---
+
+## Phase 0 — Migrate from KùzuDB to LadybugDB
+
+KùzuDB was [archived on October 10, 2025](https://www.theregister.com/2025/10/14/kuzudb_abandoned/)
+by Kùzu Inc. [LadybugDB](https://github.com/LadybugDB/ladybug) is the most active community fork
+(400+ stars, monthly releases, v0.14.1 as of Jan 2026), with identical API, Cypher support, and
+cross-platform Python bindings (`pip install real_ladybug`).
+
+### Steps
+
+1. **Update Python dependency** — Replace `kuzu>=0.4.0` with `real_ladybug>=0.14.0` in
+   `requirements.txt` (and later `pyproject.toml` in Phase 1).
+
+2. **Update source code imports** — In `src/memory_client.py`:
+   - Replace `import kuzu` with `import real_ladybug`
+   - Replace `kuzu.Database(...)` with `real_ladybug.Database(...)`
+   - Replace `kuzu.Connection(...)` with `real_ladybug.Connection(...)`
+   - Update module docstring to reference LadybugDB instead of KùzuDB
+
+3. **Update documentation** — In all docs and markdown files, replace references to KùzuDB with
+   LadybugDB and `pip install kuzu` with `pip install real_ladybug`:
+   - `README.md`
+   - `docs/design-decisions.md`
+   - `docs/usage-guide.md`
+   - `src/directory.md`
+   - `TODO.md`
+
+4. **Verify** — Install `real_ladybug`, run the existing test suite, confirm all tests pass.
+
+### Verification
+
+- `pip install real_ladybug` succeeds on the current platform
+- All existing tests pass without modification (beyond import changes)
+- No remaining references to `kuzu` in source code or dependency files
 
 ---
 
@@ -14,7 +51,7 @@ Split the 2,600-line monolith `src/memory_client.py` into a proper installable p
 
 1. **Create package scaffolding:**
    - `axons/` top-level package with `__init__.py`
-   - `pyproject.toml` (PEP 621) replacing `requirements.txt`, declaring `kuzu>=0.4.0` as
+   - `pyproject.toml` (PEP 621) replacing `requirements.txt`, declaring `real_ladybug>=0.14.0` as
      dependency and `pytest` as optional test dependency
    - Keep `docs/` at project root (already there)
 
@@ -37,8 +74,7 @@ Split the 2,600-line monolith `src/memory_client.py` into a proper installable p
 
 4. **Move tests:** `src/test_memory_system.py` → `tests/test_memory_system.py`; update imports.
 
-5. **Fix `src/directory.md`:** Update to reflect new structure; fix the `K�zuDB` → `KùzuDB`
-   encoding issue.
+5. **Fix `src/directory.md`:** Update to reflect new structure.
 
 ### Verification
 
@@ -55,7 +91,7 @@ Fix the bugs and correctness issues discovered during code review.
 ### Steps
 
 1. **Duplicate edge prevention** — Replace all 16 `CREATE` relationship queries with `MERGE`
-   (or check-then-create if KùzuDB doesn't support `MERGE` for relationships).
+   (or check-then-create if LadybugDB doesn't support `MERGE` for relationships).
    Affected methods:
    - `link_memory_to_concept`, `link_memory_to_keyword`, `link_memory_to_topic`,
      `link_memory_to_entity`, `link_memory_to_source`, `link_memory_to_context`,
@@ -77,7 +113,7 @@ Fix the bugs and correctness issues discovered during code review.
    methods that raises `RuntimeError("Client is closed")` instead of `AttributeError`.
 
 5. **Remove misleading `hops` parameter** — In `get_related_memories()`, either implement true
-   variable-depth traversal via KùzuDB's recursive path syntax, or remove the parameter and
+   variable-depth traversal via LadybugDB's recursive path syntax, or remove the parameter and
    document the single-hop behavior.
 
 6. **Bidirectional Hebbian duplication** — In `apply_hebbian_learning()`, check if the reverse
@@ -105,7 +141,7 @@ Address N+1 queries, missing indexes, and batching issues.
 
 1. **Secondary indexes** — Add index creation to `initialize_schema()`:
    - `Concept.name`, `Keyword.term`, `Topic.name`, `Entity.name`
-   - `Memory.memory_type`, `Memory.summary` (if KùzuDB supports text indexing)
+   - `Memory.memory_type`, `Memory.summary` (if LadybugDB supports text indexing)
    - `Compartment.name`
 
 2. **Batch `_filter_by_permeability()`** — Replace the per-result `can_data_flow()` loop with a
@@ -119,14 +155,14 @@ Address N+1 queries, missing indexes, and batching issues.
    query using `UNION ALL` or batch execution. Same for `get_node_counts()`. Ensure
    `export_directory_markdown()` calls only one of them.
 
-5. **Full-text search** — Investigate KùzuDB's full-text search capabilities. If unavailable, add
+5. **Full-text search** — Investigate LadybugDB's full-text search capabilities. If unavailable, add
    an in-memory inverted index (e.g., `whoosh` or a simple dict-based approach) for
    `search_memories()` to avoid `CONTAINS` scans.
 
 6. **Connection pooling** — Create a small connection pool (configurable size) in
-   `MemoryGraphClient.__init__()` for read concurrency. KùzuDB supports multiple read connections.
+   `MemoryGraphClient.__init__()` for read concurrency. LadybugDB supports multiple read connections.
 
-7. **Transaction wrapper for `quick_store_memory()`** — Wrap multi-step operations in KùzuDB
+7. **Transaction wrapper for `quick_store_memory()`** — Wrap multi-step operations in LadybugDB
    transactions so partial failures roll back cleanly.
 
 ### Verification
@@ -139,6 +175,12 @@ Address N+1 queries, missing indexes, and batching issues.
 ---
 
 ## Phase 4 — Test Coverage & Framework Migration
+
+The purpose of this solution is to serve as a "synaptic brain" for LLMs like Claude to store and
+retrieve memories in a more efficient and human-like manner than the standard markdown file approach
+to LLM memory storage. With that in mind, we need comprehensive test coverage for every possible
+scenario in which an LLM would need to store or recall one or more memories — both at the explicit
+request of the user and implicitly during normal user/LLM interactions.
 
 Migrate to pytest and fill all coverage gaps.
 
@@ -279,9 +321,11 @@ Complete `TODO.md` Phases 6–9 and update all documentation.
 
 | Decision                                 | Rationale                                                                                                |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| LadybugDB over other KùzuDB forks        | Most active fork (400+ stars, monthly releases), near-drop-in API, cross-platform Windows wheels         |
 | Package name `axons`                     | Short, memorable, matches project name                                                                   |
-| `MERGE` over check-then-create for edges | Cleaner, atomic, fewer round-trips (fall back to check-then-create if KùzuDB lacks relationship `MERGE`) |
+| `MERGE` over check-then-create for edges | Cleaner, atomic, fewer round-trips (fall back to check-then-create if LadybugDB lacks relationship `MERGE`) |
 | pytest over unittest                     | Better fixtures, parametrize, plugin ecosystem                                                           |
 | Full package with `pyproject.toml`       | Enables `pip install`, proper versioning, future PyPI publishing                                         |
 | MCP server after core fixes (Phases 5–6) | Building on a buggy foundation would compound problems                                                   |
 | Split `_run_write` into schema vs. data  | Prevents silent swallowing of real data errors                                                           |
+

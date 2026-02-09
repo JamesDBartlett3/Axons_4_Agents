@@ -27,7 +27,7 @@ cd Axons_4_Agents
 pip install -r requirements.txt
 ```
 
-That's it! No database server setup required. KùzuDB is an embedded database that runs entirely within your Python process.
+That's it! No database server setup required. LadybugDB is an embedded database that runs entirely within your Python process.
 
 ### Basic Usage
 
@@ -240,15 +240,18 @@ client.set_active_compartment(None)
 
 See [Compartmentalization Guide](docs/compartmentalization.md) for full documentation.
 
-## Why KùzuDB?
+## Why LadybugDB?
 
-This project uses [KùzuDB](https://kuzudb.com/) as its graph database because:
+This project uses [LadybugDB](https://github.com/LadybugDB/ladybug) as its graph database because:
 
-1. **Zero Setup**: Install with `pip install kuzu` - no server, no Docker, no configuration
+1. **Zero Setup**: Install with `pip install real_ladybug` - no server, no Docker, no configuration
 2. **Cross-Platform**: Native binaries for Windows, macOS, and Linux
 3. **Embedded**: Runs in-process, data stored in a local directory
 4. **Fast**: Written in C++ with excellent query performance
 5. **Cypher Support**: Uses the familiar Cypher query language
+
+> **Note**: This project originally used KùzuDB, which was archived in October 2025. LadybugDB is
+> the most actively maintained community fork, with an identical API and Cypher dialect.
 
 ## Documentation
 
@@ -260,7 +263,7 @@ This project uses [KùzuDB](https://kuzudb.com/) as its graph database because:
 ## Requirements
 
 - Python 3.8+
-- kuzu >= 0.4.0
+- real_ladybug >= 0.14.0
 
 ## License
 

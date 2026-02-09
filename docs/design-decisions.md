@@ -32,7 +32,7 @@ This allows queries like:
 - "What decisions were informed by memories about 'security'?"
 - "Which memories contradict each other?"
 
-## Why KùzuDB?
+## Why LadybugDB?
 
 We evaluated several graph databases:
 
@@ -42,24 +42,31 @@ We evaluated several graph databases:
 | **Memgraph**  | C++ (fast, low memory), Cypher-compatible | Requires WSL on Windows, no macOS support      |
 | **ArangoDB**  | Multi-model                               | AQL less intuitive for graphs, server required |
 | **SurrealDB** | Modern, Rust-based                        | Very new, still maturing                       |
-| **KùzuDB**    | Embedded, cross-platform, pip install     | Smaller community                              |
+| **LadybugDB** | Embedded, cross-platform, pip install     | Smaller community                              |
 
-### Decision: KùzuDB
+### Decision: LadybugDB (formerly KùzuDB)
 
 **Primary reasons:**
 
-1. **Zero Setup**: Just `pip install kuzu` - no server, no Docker, no WSL, no configuration
+1. **Zero Setup**: Just `pip install real_ladybug` - no server, no Docker, no WSL, no configuration
 2. **Cross-Platform**: Native binaries for Windows, macOS, and Linux without any workarounds
 3. **Embedded**: Runs in-process like SQLite, data stored in a local directory
 4. **Speed**: C++ implementation means fast queries and low memory usage
 5. **Cypher Support**: Uses a Cypher-like query language, so existing knowledge transfers
 6. **Lightweight**: Small footprint, no background processes to manage
+7. **Actively Maintained**: Monthly releases, community-driven fork with investor backing
 
 **Trade-offs accepted:**
 
 - Smaller community than Neo4j
 - Fewer advanced features than enterprise databases
 - Some Cypher syntax differences (minor)
+
+### Previous Choice: KùzuDB (Archived)
+
+KùzuDB was archived by Kùzu Inc. on October 10, 2025. LadybugDB is the most active community fork,
+led by Arun Sharma (ex-Facebook, ex-Google), with an identical API and Cypher dialect. Migration
+required only changing the pip package name and import statement.
 
 ### Previous Choice: Memgraph (Deprecated)
 
@@ -70,7 +77,7 @@ We previously used Memgraph, which required:
 - Windows Task Scheduler for auto-start
 - Multiple configuration steps
 
-This created a 9-step setup process and platform lock-in. KùzuDB eliminates all of this complexity.
+This created a 9-step setup process and platform lock-in. LadybugDB eliminates all of this complexity.
 
 ## Database Design: Why These Node Types?
 
@@ -152,15 +159,15 @@ Early design considered storing summaries in the graph and full content in markd
 
 ## Python Client Design
 
-### Why KùzuDB's Native Python Bindings?
+### Why LadybugDB's Native Python Bindings?
 
-KùzuDB provides native Python bindings via pip:
+LadybugDB provides native Python bindings via pip:
 
-| Library             | Pros                                 | Cons                  |
-| ------------------- | ------------------------------------ | --------------------- |
-| **kuzu** (official) | Native, lightweight, well-maintained | Name matches database |
+| Library                    | Pros                                 | Cons                       |
+| -------------------------- | ------------------------------------ | -------------------------- |
+| **real_ladybug** (official) | Native, lightweight, well-maintained | Package name differs from DB name |
 
-**Decision**: Use the official kuzu package - it's the only option and works well.
+**Decision**: Use the official `real_ladybug` package — API-compatible with the original KùzuDB `kuzu` package.
 
 ### API Design: Data Classes + Client
 
@@ -197,7 +204,7 @@ quick_store_memory(
 
 ### No Auto-Start Needed
 
-Unlike server-based databases, KùzuDB:
+Unlike server-based databases, LadybugDB:
 
 - Runs in your Python process
 - Starts automatically when you create a client
@@ -206,7 +213,7 @@ Unlike server-based databases, KùzuDB:
 
 ### Data Persistence
 
-KùzuDB stores data in a directory you specify:
+LadybugDB stores data in a directory you specify:
 
 - Default: `~/.axons_memory_db`
 - Custom: Pass `db_path` to `MemoryGraphClient`

@@ -339,7 +339,7 @@ with MemoryGraphClient() as client:
 
 ## Raw Cypher Queries
 
-For advanced use cases, execute Cypher-like queries directly (note: KùzuDB uses Cypher syntax with minor variations):
+For advanced use cases, execute Cypher-like queries directly (note: LadybugDB uses Cypher syntax with minor variations):
 
 ```python
 with MemoryGraphClient() as client:
@@ -396,7 +396,7 @@ with open("directory.md", "w") as f:
 with MemoryGraphClient() as client:
     # Do stuff
 
-# Also OK - KùzuDB automatically manages resources
+# Also OK - LadybugDB automatically manages resources
 client = MemoryGraphClient()
 # Do stuff
 client.close()
@@ -442,12 +442,12 @@ with MemoryGraphClient() as client:
     # Store a memory
     memory_id = quick_store_memory(
         client,
-        content="We decided to use KùzuDB because of its embedded nature and cross-platform support.",
-        summary="Database selection: KùzuDB",
+        content="We decided to use LadybugDB because of its embedded nature and cross-platform support.",
+        summary="Database selection: LadybugDB",
         concepts=["graph database", "architecture"],
-        keywords=["kuzu", "embedded"],
+        keywords=["ladybug", "embedded"],
         topics=["Technology Decisions"],
-        entities=[("KùzuDB", "technology")]
+        entities=[("LadybugDB", "technology")]
     )
 
     # Link to context and goal
@@ -456,7 +456,7 @@ with MemoryGraphClient() as client:
 
     # Record a decision
     decision = Decision(
-        description="Use KùzuDB for the memory database",
+        description="Use LadybugDB for the memory database",
         rationale="Embedded graph database, cross-platform, simple pip install, Cypher-like query language"
     )
     decision_id = client.create_decision(decision)

@@ -1,6 +1,6 @@
 # Memory Graph Directory
 
-Last updated: 2026-02-06T17:29:12.736372
+Last updated: 2026-02-09T13:14:15.293954
 
 ## Node Counts
 
@@ -22,49 +22,49 @@ Last updated: 2026-02-06T17:29:12.736372
 
 ## Compartments
 
-- `d794d7df` **Project Alpha** (open, ext:no)
-- `fb6e801e` **Closed Project** (closed, ext:no)
-- `9f51122d` **Open Project** (open, ext:yes)
-- `3b6f7a3a` **Secure** (osmotic_inward, ext:yes)
-- `11db1aad` **Public** (osmotic_outward, ext:yes)
-- `3979681a` **Secure Zone** (osmotic_inward, ext:yes)
-- `7e000f7a` **Open** (open, ext:yes)
-- `99e1747f` **Closed** (closed, ext:no)
+- `f89917e3` **Project Alpha** (open, ext:no)
+- `0a4005b6` **Closed Project** (closed, ext:no)
+- `fcb03453` **Open Project** (open, ext:yes)
+- `7bc78174` **Secure** (osmotic_inward, ext:yes)
+- `f592403f` **Public** (osmotic_outward, ext:yes)
+- `707a7d9b` **Secure Zone** (osmotic_inward, ext:yes)
+- `290461fb` **Open** (open, ext:yes)
+- `69499a81` **Closed** (closed, ext:no)
 
 ## Concepts
 
-- `d9249bc1` **graph database**
-- `1db0acb8` **data persistence**
-- `8ab6f1a1` **cross-platform**
-- `4f8b7cc4` **architecture**
-- `471b9f37` **testing**
-- `ca2a0a61` **project**
+- `ab90dc29` **graph database**
+- `8987c4eb` **data persistence**
+- `5b80003a` **cross-platform**
+- `0d64c0c2` **architecture**
+- `3c554646` **testing**
+- `47b0666b` **project**
 
 ## Topics
 
-- `7601472b` **Technology Preferences**
-- `cbb1483b` **Software Architecture**
-- `6271a472` **Technology Decisions**
+- `7662fc86` **Technology Preferences**
+- `26feda48` **Software Architecture**
+- `fa35292d` **Technology Decisions**
 
 ## Keywords
 
-- `b9123e8a` kuzu
-- `c696b437` embedded
-- `d39751e0` simple
-- `4bca9389` memory system
-- `e4db8db0` pip install
-- `bd9700a5` comparison
-- `5b61ddbf` plasticity
+- `13f30c2a` ladybug
+- `38038b03` embedded
+- `4f78615f` simple
+- `1e1cfb39` memory system
+- `e9fde92f` pip install
+- `5c147be5` comparison
+- `fa15bf5f` plasticity
 
 ## Entities
 
-- `06d00cb7` **User** (person)
-- `1a846c8e` **KùzuDB** (technology)
+- `a7831ec6` **User** (person)
+- `020e2139` **LadybugDB** (technology)
 
 ## Goals
 
-- `2189e33a` [active] Build a comprehensive memory system for AI agents
+- `aaddbf45` [active] Build a comprehensive memory system for AI agents
 
 ## Questions
 
-- `400ce131` [open] What additional node types might be useful for the
+- `cfd23fbe` [open] What additional node types might be useful for the

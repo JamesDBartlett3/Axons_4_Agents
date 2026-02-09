@@ -1,6 +1,6 @@
 """
 Test script for the Memory Graph System.
-Verifies connection to KùzuDB and tests basic operations.
+Verifies connection to LadybugDB and tests basic operations.
 
 Cross-platform compatible: Works on Windows, macOS, and Linux.
 """
@@ -33,7 +33,7 @@ def get_test_db_path():
     """Get or create a temporary database path for testing."""
     global TEST_DB_PATH
     if TEST_DB_PATH is None:
-        # KùzuDB creates the directory itself, so we just need a unique path
+        # LadybugDB creates the directory itself, so we just need a unique path
         # that doesn't exist yet
         temp_dir = tempfile.gettempdir()
         TEST_DB_PATH = os.path.join(temp_dir, f"axons_test_{uuid.uuid4().hex[:8]}")
@@ -41,8 +41,8 @@ def get_test_db_path():
 
 
 def test_connection():
-    """Test basic connection to KùzuDB."""
-    print("Testing connection to KùzuDB...")
+    """Test basic connection to LadybugDB."""
+    print("Testing connection to LadybugDB...")
     try:
         client = MemoryGraphClient(db_path=get_test_db_path())
         # Simple query to verify connection - just check we can initialize
@@ -82,12 +82,12 @@ def test_create_memory():
             # Create a test memory
             memory_id = quick_store_memory(
                 client,
-                content="User prefers to use KùzuDB for graph database needs because it's cross-platform and easy to install.",
-                summary="User preference for KùzuDB database",
+                content="User prefers to use LadybugDB for graph database needs because it's cross-platform and easy to install.",
+                summary="User preference for LadybugDB database",
                 concepts=["graph database", "data persistence", "cross-platform"],
-                keywords=["kuzu", "embedded", "simple"],
+                keywords=["ladybug", "embedded", "simple"],
                 topics=["Technology Preferences", "Software Architecture"],
-                entities=[("User", "person"), ("KùzuDB", "technology")],
+                entities=[("User", "person"), ("LadybugDB", "technology")],
                 confidence=1.0
             )
             print(f"  Created memory: {memory_id}")
@@ -115,19 +115,19 @@ def test_relationships():
             # Create two related memories
             memory1_id = quick_store_memory(
                 client,
-                content="The memory graph system uses KùzuDB as its backend database.",
+                content="The memory graph system uses LadybugDB as its backend database.",
                 summary="Memory system architecture decision",
                 concepts=["architecture", "graph database"],
-                keywords=["kuzu", "memory system"],
+                keywords=["ladybug", "memory system"],
                 topics=["Software Architecture"]
             )
 
             memory2_id = quick_store_memory(
                 client,
-                content="KùzuDB was chosen for its cross-platform compatibility and simple installation.",
+                content="LadybugDB was chosen for its cross-platform compatibility and simple installation.",
                 summary="Database selection rationale",
                 concepts=["architecture", "cross-platform", "graph database"],
-                keywords=["kuzu", "pip install", "comparison"],
+                keywords=["ladybug", "pip install", "comparison"],
                 topics=["Software Architecture", "Technology Decisions"]
             )
 
@@ -1271,7 +1271,7 @@ def cleanup_test_data():
 def main():
     """Run all tests."""
     print("=" * 60)
-    print("Memory Graph System Test Suite (KùzuDB)")
+    print("Memory Graph System Test Suite (LadybugDB)")
     print("=" * 60)
 
     results = {}
