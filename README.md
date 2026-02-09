@@ -80,31 +80,34 @@ python src/test_memory_system.py
 
 The system uses 14 different node types:
 
-| Node | Purpose |
-|------|---------|
-| **Memory** | Core memory content with summary, confidence, and access tracking |
-| **Compartment** | Named boundary for memory isolation with permeability control |
-| **Concept** | Abstract ideas (e.g., "machine learning", "user experience") |
-| **Keyword** | Specific terms for precise matching |
-| **Topic** | Broad categories for organization |
-| **Entity** | People, organizations, tools, technologies, places |
-| **Source** | Information origin (conversation, file, URL, etc.) |
-| **Decision** | Choices made with rationale and outcome |
-| **Goal** | Objectives with status and priority |
-| **Question** | Open items to be resolved |
-| **Context** | Projects, tasks, sessions, domains |
-| **Preference** | User likes/dislikes with strength |
-| **TemporalMarker** | Time periods and sequences |
-| **Contradiction** | Conflicting information to resolve |
+| Node               | Purpose                                                           |
+| ------------------ | ----------------------------------------------------------------- |
+| **Memory**         | Core memory content with summary, confidence, and access tracking |
+| **Compartment**    | Named boundary for memory isolation with permeability control     |
+| **Concept**        | Abstract ideas (e.g., "machine learning", "user experience")      |
+| **Keyword**        | Specific terms for precise matching                               |
+| **Topic**          | Broad categories for organization                                 |
+| **Entity**         | People, organizations, tools, technologies, places                |
+| **Source**         | Information origin (conversation, file, URL, etc.)                |
+| **Decision**       | Choices made with rationale and outcome                           |
+| **Goal**           | Objectives with status and priority                               |
+| **Question**       | Open items to be resolved                                         |
+| **Context**        | Projects, tasks, sessions, domains                                |
+| **Preference**     | User likes/dislikes with strength                                 |
+| **TemporalMarker** | Time periods and sequences                                        |
+| **Contradiction**  | Conflicting information to resolve                                |
 
 ### Relationships
 
 Memories connect to other nodes through weighted relationships:
+
 - `HAS_CONCEPT` (relevance), `HAS_KEYWORD`, `BELONGS_TO` (isPrimary)
 - `MENTIONS` (role), `FROM_SOURCE` (excerpt), `IN_CONTEXT`
-- `INFORMED` (decision), `SUPPORTS` (strength), `PARTIALLY_ANSWERS` (completeness)
+- `INFORMED`, `SUPPORTS` (strength), `PARTIALLY_ANSWERS` (completeness)
+- `REVEALS`, `OCCURRED_DURING`
 - `RELATES_TO` (strength, relType, permeability) - memory-to-memory with synaptic-like weights
 - `IN_COMPARTMENT` - memory belongs to a compartment
+- `CONCEPT_RELATED_TO` (relType), `DEPENDS_ON`, `LED_TO`, `PART_OF` - inter-node relationships
 - `CONFLICTS_WITH`, `SUPERSEDES` (contradictions)
 
 ### Brain Plasticity
@@ -136,7 +139,7 @@ client.run_maintenance_cycle()
 
 ### Tuneable Plasticity Configuration
 
-All plasticity behavior is configurable via `PlasticityConfig`. All numeric values are 0-1 scale with 5 decimal precision.
+All plasticity behavior is configurable via `PlasticityConfig`. All numeric values are on a 0-1 scale.
 
 ```python
 from memory_client import MemoryGraphClient, PlasticityConfig, Curve
@@ -152,6 +155,10 @@ config = PlasticityConfig(
     hebbian_amount=0.05000,      # For co-access strengthening
     retrieval_amount=0.02000,    # For retrieval-induced changes
     decay_amount=0.05000,        # For time-based decay
+
+    # Initial connection strength
+    initial_strength_explicit=0.50000,  # User-created connections
+    initial_strength_implicit=0.30000,  # Hebbian/emergent connections
 
     # Plasticity curve (applies to strengthen AND weaken symmetrically)
     curve=Curve.EXPONENTIAL,     # LINEAR, EXPONENTIAL, LOGARITHMIC
@@ -172,7 +179,6 @@ config = PlasticityConfig(
 
     # Hebbian learning
     hebbian_creates_connections=True,
-    hebbian_initial_strength=0.30000,
 )
 
 # Use custom config
@@ -220,14 +226,15 @@ client.set_active_compartment(None)
 
 **Permeability controls data flow direction:**
 
-| Permeability | Inward | Outward | Use Case |
-|--------------|--------|---------|----------|
-| `OPEN` | Yes | Yes | Default - no restrictions |
-| `CLOSED` | No | No | Complete isolation |
-| `OSMOTIC_INWARD` | Yes | No | Can read external, doesn't leak |
-| `OSMOTIC_OUTWARD` | No | Yes | Shares out, not influenced by external |
+| Permeability      | Inward | Outward | Use Case                               |
+| ----------------- | ------ | ------- | -------------------------------------- |
+| `OPEN`            | Yes    | Yes     | Default - no restrictions              |
+| `CLOSED`          | No     | No      | Complete isolation                     |
+| `OSMOTIC_INWARD`  | Yes    | No      | Can read external, doesn't leak        |
+| `OSMOTIC_OUTWARD` | No     | Yes     | Shares out, not influenced by external |
 
 **Two independent controls:**
+
 1. **Connection Formation**: Whether new organic connections can form across boundaries
 2. **Query Traversal**: Whether existing connections can be traversed during queries
 

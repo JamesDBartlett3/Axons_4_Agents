@@ -8,162 +8,176 @@ This document describes all node types, their properties, and the relationships 
 
 The core node type - represents a single memory.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `content` | String | Full memory content |
-| `summary` | String | Brief summary for quick scanning |
-| `created` | DateTime | When the memory was created |
-| `lastAccessed` | DateTime | When the memory was last retrieved |
-| `accessCount` | Integer | How many times it's been accessed |
-| `confidence` | Float (0-1) | How certain the information is |
+| Property       | Type        | Description                                           |
+| -------------- | ----------- | ----------------------------------------------------- |
+| `id`           | UUID        | Unique identifier (primary key)                       |
+| `content`      | String      | Full memory content                                   |
+| `summary`      | String      | Brief summary for quick scanning                      |
+| `created`      | DateTime    | When the memory was created                           |
+| `lastAccessed` | DateTime    | When the memory was last retrieved                    |
+| `accessCount`  | Integer     | How many times it's been accessed                     |
+| `confidence`   | Float (0-1) | How certain the information is                        |
+| `permeability` | Enum        | One of: open, closed, osmotic_inward, osmotic_outward |
 
 ### Concept
 
 Abstract ideas that memories relate to.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `name` | String | The concept name (e.g., "authentication") |
-| `description` | String | Optional description |
-| `created` | DateTime | When first created |
+| Property      | Type     | Description                               |
+| ------------- | -------- | ----------------------------------------- |
+| `id`          | UUID     | Unique identifier (primary key)           |
+| `name`        | String   | The concept name (e.g., "authentication") |
+| `description` | String   | Optional description                      |
+| `created`     | DateTime | When first created                        |
 
 ### Keyword
 
 Specific terms for exact matching.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `term` | String | The keyword (e.g., "OAuth2") |
-| `created` | DateTime | When first created |
+| Property  | Type     | Description                     |
+| --------- | -------- | ------------------------------- |
+| `id`      | UUID     | Unique identifier (primary key) |
+| `term`    | String   | The keyword (e.g., "OAuth2")    |
+| `created` | DateTime | When first created              |
 
 ### Topic
 
 Broader subject areas.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `name` | String | The topic name (e.g., "Software Architecture") |
-| `description` | String | Optional description |
-| `created` | DateTime | When first created |
+| Property      | Type     | Description                                    |
+| ------------- | -------- | ---------------------------------------------- |
+| `id`          | UUID     | Unique identifier (primary key)                |
+| `name`        | String   | The topic name (e.g., "Software Architecture") |
+| `description` | String   | Optional description                           |
+| `created`     | DateTime | When first created                             |
 
 ### Entity
 
 People, organizations, projects, tools, technologies, places.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `name` | String | Entity name |
-| `type` | Enum | One of: person, organization, project, tool, technology, place |
-| `description` | String | Optional description |
-| `aliases` | String[] | Alternative names |
-| `created` | DateTime | When first created |
+| Property      | Type     | Description                                                    |
+| ------------- | -------- | -------------------------------------------------------------- |
+| `id`          | UUID     | Unique identifier (primary key)                                |
+| `name`        | String   | Entity name                                                    |
+| `type`        | Enum     | One of: person, organization, project, tool, technology, place |
+| `description` | String   | Optional description                                           |
+| `aliases`     | String[] | Alternative names                                              |
+| `created`     | DateTime | When first created                                             |
 
 ### Source
 
 Where information came from.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `type` | Enum | One of: conversation, file, url, document, observation |
-| `reference` | String | The actual reference (file path, URL, etc.) |
-| `title` | String | Human-readable title |
-| `reliability` | Float (0-1) | How reliable the source is |
-| `created` | DateTime | When first created |
+| Property      | Type        | Description                                            |
+| ------------- | ----------- | ------------------------------------------------------ |
+| `id`          | UUID        | Unique identifier (primary key)                        |
+| `type`        | Enum        | One of: conversation, file, url, document, observation |
+| `reference`   | String      | The actual reference (file path, URL, etc.)            |
+| `title`       | String      | Human-readable title                                   |
+| `reliability` | Float (0-1) | How reliable the source is                             |
+| `created`     | DateTime    | When first created                                     |
 
 ### Decision
 
 Choices made with their rationale.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `description` | String | What was decided |
-| `rationale` | String | Why it was decided |
-| `date` | DateTime | When the decision was made |
-| `outcome` | String | What happened as a result |
-| `reversible` | Boolean | Whether the decision can be undone |
+| Property      | Type     | Description                        |
+| ------------- | -------- | ---------------------------------- |
+| `id`          | UUID     | Unique identifier (primary key)    |
+| `description` | String   | What was decided                   |
+| `rationale`   | String   | Why it was decided                 |
+| `date`        | DateTime | When the decision was made         |
+| `outcome`     | String   | What happened as a result          |
+| `reversible`  | Boolean  | Whether the decision can be undone |
 
 ### Goal
 
 User objectives.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `description` | String | The goal |
-| `status` | Enum | One of: active, achieved, abandoned |
-| `priority` | Integer | Priority (1 = highest) |
-| `targetDate` | DateTime | Optional target completion date |
-| `created` | DateTime | When first created |
+| Property      | Type     | Description                         |
+| ------------- | -------- | ----------------------------------- |
+| `id`          | UUID     | Unique identifier (primary key)     |
+| `description` | String   | The goal                            |
+| `status`      | Enum     | One of: active, achieved, abandoned |
+| `priority`    | Integer  | Priority (1 = highest)              |
+| `targetDate`  | DateTime | Optional target completion date     |
+| `created`     | DateTime | When first created                  |
 
 ### Question
 
 Unresolved items.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `text` | String | The question |
-| `status` | Enum | One of: open, partial, answered |
+| Property       | Type     | Description                         |
+| -------------- | -------- | ----------------------------------- |
+| `id`           | UUID     | Unique identifier (primary key)     |
+| `text`         | String   | The question                        |
+| `status`       | Enum     | One of: open, partial, answered     |
 | `answeredDate` | DateTime | When fully answered (if applicable) |
-| `created` | DateTime | When first created |
+| `created`      | DateTime | When first created                  |
 
 ### Context
 
 Projects, tasks, conversations, sessions, domains.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `name` | String | Context name |
-| `type` | Enum | One of: project, task, conversation, session, domain |
-| `description` | String | Optional description |
-| `status` | Enum | One of: active, completed, archived |
-| `created` | DateTime | When first created |
+| Property      | Type     | Description                                          |
+| ------------- | -------- | ---------------------------------------------------- |
+| `id`          | UUID     | Unique identifier (primary key)                      |
+| `name`        | String   | Context name                                         |
+| `type`        | Enum     | One of: project, task, conversation, session, domain |
+| `description` | String   | Optional description                                 |
+| `status`      | Enum     | One of: active, completed, archived                  |
+| `created`     | DateTime | When first created                                   |
 
 ### Preference
 
 User likes/dislikes and working styles.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `category` | String | Category (e.g., "coding style", "communication") |
-| `preference` | String | The preference itself |
-| `strength` | Float (-1 to 1) | -1 = strong dislike, 0 = neutral, 1 = strong like |
-| `observations` | Integer | How many times this has been observed |
-| `created` | DateTime | When first created |
+| Property       | Type            | Description                                       |
+| -------------- | --------------- | ------------------------------------------------- |
+| `id`           | UUID            | Unique identifier (primary key)                   |
+| `category`     | String          | Category (e.g., "coding style", "communication")  |
+| `preference`   | String          | The preference itself                             |
+| `strength`     | Float (-1 to 1) | -1 = strong dislike, 0 = neutral, 1 = strong like |
+| `observations` | Integer         | How many times this has been observed             |
+| `created`      | DateTime        | When first created                                |
 
 ### TemporalMarker
 
 Time periods and sequences.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `type` | Enum | One of: point, period, sequence |
-| `description` | String | Description of the time marker |
-| `startDate` | DateTime | Start of period (if applicable) |
-| `endDate` | DateTime | End of period (if applicable) |
-| `created` | DateTime | When first created |
+| Property      | Type     | Description                     |
+| ------------- | -------- | ------------------------------- |
+| `id`          | UUID     | Unique identifier (primary key) |
+| `type`        | Enum     | One of: point, period, sequence |
+| `description` | String   | Description of the time marker  |
+| `startDate`   | DateTime | Start of period (if applicable) |
+| `endDate`     | DateTime | End of period (if applicable)   |
+| `created`     | DateTime | When first created              |
 
 ### Contradiction
 
 When information conflicts.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | UUID | Unique identifier (primary key) |
-| `description` | String | What the contradiction is |
-| `resolution` | String | How it was resolved (if applicable) |
-| `status` | Enum | One of: unresolved, resolved, accepted |
-| `created` | DateTime | When first created |
+| Property      | Type     | Description                            |
+| ------------- | -------- | -------------------------------------- |
+| `id`          | UUID     | Unique identifier (primary key)        |
+| `description` | String   | What the contradiction is              |
+| `resolution`  | String   | How it was resolved (if applicable)    |
+| `status`      | Enum     | One of: unresolved, resolved, accepted |
+| `created`     | DateTime | When first created                     |
+
+### Compartment
+
+Named boundaries for memory isolation with controlled data flow.
+
+| Property                   | Type     | Description                                           |
+| -------------------------- | -------- | ----------------------------------------------------- |
+| `id`                       | UUID     | Unique identifier (primary key)                       |
+| `name`                     | String   | Human-readable compartment name                       |
+| `permeability`             | Enum     | One of: open, closed, osmotic_inward, osmotic_outward |
+| `allowExternalConnections` | Boolean  | Whether organic connections can form externally       |
+| `description`              | String   | Optional description                                  |
+| `created`                  | DateTime | When first created                                    |
 
 ---
 
@@ -172,95 +186,119 @@ When information conflicts.
 ### Memory Relationships
 
 ```
-(Memory)-[:RELATES_TO {strength: Float, relType: String}]->(Memory)
+(Memory)-[:RELATES_TO {strength: Float, relType: String, permeability: String}]->(Memory)
 ```
-Links two related memories. `strength` indicates how strongly related (0-1). `relType` describes the relationship kind.
+
+Links two related memories. `strength` indicates how strongly related (0-1). `relType` describes the relationship kind. `permeability` controls data flow direction through this specific connection (one of: open, closed, osmotic_inward, osmotic_outward).
 
 ```
 (Memory)-[:HAS_CONCEPT {relevance: Float}]->(Concept)
 ```
+
 Memory relates to a concept. `relevance` indicates how central this concept is to the memory.
 
 ```
 (Memory)-[:HAS_KEYWORD]->(Keyword)
 ```
+
 Memory contains this keyword.
 
 ```
 (Memory)-[:BELONGS_TO {isPrimary: Boolean}]->(Topic)
 ```
+
 Memory belongs to a topic. `isPrimary` indicates if this is the main topic.
 
 ```
 (Memory)-[:MENTIONS {role: String}]->(Entity)
 ```
+
 Memory mentions an entity. `role` describes how (e.g., "subject", "author", "tool used").
 
 ```
 (Memory)-[:FROM_SOURCE {excerpt: String}]->(Source)
 ```
+
 Memory came from this source. `excerpt` contains the relevant quote if applicable.
 
 ```
 (Memory)-[:IN_CONTEXT]->(Context)
 ```
+
 Memory belongs to this context (project, task, etc.).
 
 ```
 (Memory)-[:OCCURRED_DURING]->(TemporalMarker)
 ```
+
 Memory relates to this time period.
 
 ```
 (Memory)-[:INFORMED]->(Decision)
 ```
+
 Memory informed this decision.
 
 ```
 (Memory)-[:PARTIALLY_ANSWERS {completeness: Float}]->(Question)
 ```
+
 Memory partially answers this question. `completeness` indicates how much (0-1).
 
 ```
 (Memory)-[:SUPPORTS {strength: Float}]->(Goal)
 ```
+
 Memory supports this goal.
 
 ```
 (Memory)-[:REVEALS]->(Preference)
 ```
+
 Memory reveals this user preference.
+
+```
+(Memory)-[:IN_COMPARTMENT]->(Compartment)
+```
+
+Memory belongs to this compartment. Multiple compartments are allowed (overlapping compartments).
 
 ### Inter-Node Relationships
 
 ```
 (Concept)-[:CONCEPT_RELATED_TO {relType: String}]->(Concept)
 ```
+
 Two concepts are related.
 
 ```
 (Decision)-[:LED_TO]->(Decision)
 ```
+
 One decision led to another (causal chain).
 
 ```
 (Goal)-[:DEPENDS_ON]->(Goal)
 ```
+
 Goal hierarchy/dependencies.
 
 ```
 (Context)-[:PART_OF]->(Context)
 ```
+
 Context hierarchy (task within project).
 
 ```
 (Contradiction)-[:CONFLICTS_WITH]->(Memory)
 ```
+
 The memories that conflict with each other.
 
 ```
 (Contradiction)-[:SUPERSEDES]->(Memory)
 ```
+
 In a resolved contradiction, new info supersedes old.
 
 ---
@@ -285,11 +323,11 @@ In a resolved contradiction, new info supersedes old.
        └─────────────┘              └─────────────┘              └─────────────┘
 
               │                            │                            │
-              │                            │                            │
-              ▼                            ▼                            ▼
-       ┌─────────────┐              ┌─────────────┐              ┌─────────────┐
-       │  Decision   │              │    Goal     │              │  Question   │
-       └─────────────┘              └─────────────┘              └─────────────┘
+              │                            │          IN_COMPARTMENT    ▼
+              ▼                            ▼                    ┌─────────────────┐
+       ┌─────────────┐              ┌─────────────┐            │ Compartment     │
+       │  Decision   │              │    Goal     │            └─────────────────┘
+       └─────────────┘              └─────────────┘
 
                                            │
                                            ▼
@@ -381,7 +419,7 @@ END
 
 ```cypher
 MATCH ()-[r:RELATES_TO]->()
-WHERE r.strength < $threshold AND r.strength > 0
+WHERE r.strength < $threshold
 SET r.strength = CASE
     WHEN r.strength - $decay < 0.0 THEN 0.0
     ELSE r.strength - $decay
@@ -392,7 +430,7 @@ END
 
 ```cypher
 MATCH ()-[r:RELATES_TO]->()
-WHERE r.strength < $minStrength
+WHERE r.strength <= $minStrength
 DELETE r
 ```
 

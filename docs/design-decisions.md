@@ -23,10 +23,11 @@ Graph databases store data as nodes and edges (relationships), which naturally m
                                       |
                               [:HAS_CONCEPT]
                                       |
-(Memory B)--[:HAS_CONCEPT]-->(Concept: "security")--[:RELATED_TO]-->(Concept: "authentication")
+(Memory B)--[:HAS_CONCEPT]-->(Concept: "security")--[:CONCEPT_RELATED_TO]-->(Concept: "authentication")
 ```
 
 This allows queries like:
+
 - "Find all memories related to 'authentication' within 2 relationship hops"
 - "What decisions were informed by memories about 'security'?"
 - "Which memories contradict each other?"
@@ -35,13 +36,13 @@ This allows queries like:
 
 We evaluated several graph databases:
 
-| Database | Pros | Cons |
-|----------|------|------|
-| **Neo4j** | Most mature, best tooling, huge community | JVM-based (500MB+ RAM), requires server setup |
-| **Memgraph** | C++ (fast, low memory), Cypher-compatible | Requires WSL on Windows, no macOS support |
-| **ArangoDB** | Multi-model | AQL less intuitive for graphs, server required |
-| **SurrealDB** | Modern, Rust-based | Very new, still maturing |
-| **KùzuDB** | Embedded, cross-platform, pip install | Smaller community |
+| Database      | Pros                                      | Cons                                           |
+| ------------- | ----------------------------------------- | ---------------------------------------------- |
+| **Neo4j**     | Most mature, best tooling, huge community | JVM-based (500MB+ RAM), requires server setup  |
+| **Memgraph**  | C++ (fast, low memory), Cypher-compatible | Requires WSL on Windows, no macOS support      |
+| **ArangoDB**  | Multi-model                               | AQL less intuitive for graphs, server required |
+| **SurrealDB** | Modern, Rust-based                        | Very new, still maturing                       |
+| **KùzuDB**    | Embedded, cross-platform, pip install     | Smaller community                              |
 
 ### Decision: KùzuDB
 
@@ -55,6 +56,7 @@ We evaluated several graph databases:
 6. **Lightweight**: Small footprint, no background processes to manage
 
 **Trade-offs accepted:**
+
 - Smaller community than Neo4j
 - Fewer advanced features than enterprise databases
 - Some Cypher syntax differences (minor)
@@ -62,6 +64,7 @@ We evaluated several graph databases:
 ### Previous Choice: Memgraph (Deprecated)
 
 We previously used Memgraph, which required:
+
 - WSL2 on Windows (doesn't work on macOS)
 - systemd service management
 - Windows Task Scheduler for auto-start
@@ -73,57 +76,60 @@ This created a 9-step setup process and platform lock-in. KùzuDB eliminates all
 
 ### Core Nodes
 
-| Node Type | Purpose |
-|-----------|---------|
-| **Memory** | The actual memory content - the fundamental unit |
+| Node Type   | Purpose                                                                        |
+| ----------- | ------------------------------------------------------------------------------ |
+| **Memory**  | The actual memory content - the fundamental unit                               |
 | **Concept** | Abstract ideas that memories relate to (e.g., "authentication", "performance") |
-| **Keyword** | Specific terms for exact matching (e.g., "OAuth", "Redis") |
-| **Topic** | Broader subject areas (e.g., "Software Architecture", "User Preferences") |
+| **Keyword** | Specific terms for exact matching (e.g., "OAuth", "Redis")                     |
+| **Topic**   | Broader subject areas (e.g., "Software Architecture", "User Preferences")      |
 
 **Rationale**: Concepts, keywords, and topics provide three levels of granularity for finding related memories:
+
 - Keywords: exact term matching
 - Concepts: semantic grouping
 - Topics: high-level categorization
 
 ### Entity Nodes
 
-| Node Type | Purpose |
-|-----------|---------|
-| **Entity** | People, projects, tools, technologies, organizations |
+| Node Type  | Purpose                                                  |
+| ---------- | -------------------------------------------------------- |
+| **Entity** | People, projects, tools, technologies, organizations     |
 | **Source** | Where information came from (conversations, files, URLs) |
 
 **Rationale**: Entities create natural hubs - many memories mention the same person or tool. Sources enable provenance tracking ("where did I learn this?").
 
 ### Intentional Nodes
 
-| Node Type | Purpose |
-|-----------|---------|
-| **Decision** | Choices made and their rationale |
-| **Goal** | User objectives (active, achieved, abandoned) |
-| **Question** | Unresolved items, things to investigate |
+| Node Type    | Purpose                                       |
+| ------------ | --------------------------------------------- |
+| **Decision** | Choices made and their rationale              |
+| **Goal**     | User objectives (active, achieved, abandoned) |
+| **Question** | Unresolved items, things to investigate       |
 
 **Rationale**: These capture the "why" and "what next" aspects of memory:
+
 - Decisions can be traced back to the memories that informed them
 - Goals can be linked to supporting memories
 - Questions can be partially answered by multiple memories
 
 ### Contextual Nodes
 
-| Node Type | Purpose |
-|-----------|---------|
-| **Context** | Projects, tasks, conversations, sessions |
-| **Preference** | User likes/dislikes, working styles |
-| **TemporalMarker** | Time periods, sequences, "before/after" |
+| Node Type          | Purpose                                  |
+| ------------------ | ---------------------------------------- |
+| **Context**        | Projects, tasks, conversations, sessions |
+| **Preference**     | User likes/dislikes, working styles      |
+| **TemporalMarker** | Time periods, sequences, "before/after"  |
 
 **Rationale**: Context disambiguates - the same keyword might mean different things in different projects. Preferences accumulate over time. Temporal markers enable time-based queries.
 
 ### Meta Nodes
 
-| Node Type | Purpose |
-|-----------|---------|
-| **Contradiction** | When new information conflicts with old |
+| Node Type         | Purpose                                                         |
+| ----------------- | --------------------------------------------------------------- |
+| **Contradiction** | When new information conflicts with old                         |
+| **Compartment**   | Named boundaries for memory isolation with controlled data flow |
 
-**Rationale**: Explicit contradiction tracking prevents serving outdated information and enables resolution workflows.
+**Rationale**: Explicit contradiction tracking prevents serving outdated information and enables resolution workflows. Compartments enable memory isolation and controlled data flow direction, useful for security boundaries and context separation.
 
 ## Hybrid Storage: Graph + Markdown
 
@@ -139,6 +145,7 @@ The markdown directory serves a specific purpose: allowing Claude to quickly und
 ### Why Not Markdown-Only for Content?
 
 Early design considered storing summaries in the graph and full content in markdown. This was rejected because:
+
 1. Graph databases handle large text properties fine
 2. Having content in the graph enables full-text search within Cypher
 3. Single source of truth prevents sync issues
@@ -149,8 +156,8 @@ Early design considered storing summaries in the graph and full content in markd
 
 KùzuDB provides native Python bindings via pip:
 
-| Library | Pros | Cons |
-|---------|------|------|
+| Library             | Pros                                 | Cons                  |
+| ------------------- | ------------------------------------ | --------------------- |
 | **kuzu** (official) | Native, lightweight, well-maintained | Name matches database |
 
 **Decision**: Use the official kuzu package - it's the only option and works well.
@@ -158,6 +165,7 @@ KùzuDB provides native Python bindings via pip:
 ### API Design: Data Classes + Client
 
 The client uses:
+
 - **Data classes** for type safety and IDE completion
 - **Check-then-create for idempotency** - creating the same concept twice returns the existing one
 - **Explicit relationship methods** - clear what connections are being made
@@ -190,6 +198,7 @@ quick_store_memory(
 ### No Auto-Start Needed
 
 Unlike server-based databases, KùzuDB:
+
 - Runs in your Python process
 - Starts automatically when you create a client
 - Stops when your program ends
@@ -198,6 +207,7 @@ Unlike server-based databases, KùzuDB:
 ### Data Persistence
 
 KùzuDB stores data in a directory you specify:
+
 - Default: `~/.axons_memory_db`
 - Custom: Pass `db_path` to `MemoryGraphClient`
 
@@ -206,6 +216,7 @@ Data persists between sessions automatically.
 ### Cross-Platform Consistency
 
 The same code works identically on:
+
 - Windows
 - macOS
 - Linux
@@ -227,14 +238,14 @@ The human brain stores memories not as isolated units but as interconnected netw
 
 Every relationship between memories and other nodes carries properties:
 
-| Relationship | Key Property | Purpose |
-|--------------|--------------|---------|
-| `RELATES_TO` | `strength` (0-1) | Memory-to-memory connection weight |
-| `HAS_CONCEPT` | `relevance` (0-1) | How central the concept is to the memory |
-| `SUPPORTS` | `strength` (0-1) | How strongly memory supports a goal |
-| `PARTIALLY_ANSWERS` | `completeness` (0-1) | How much the memory answers a question |
-| `BELONGS_TO` | `isPrimary` | Whether this is the main topic |
-| `MENTIONS` | `role` | The entity's role (subject, tool, author) |
+| Relationship        | Key Property         | Purpose                                   |
+| ------------------- | -------------------- | ----------------------------------------- |
+| `RELATES_TO`        | `strength` (0-1)     | Memory-to-memory connection weight        |
+| `HAS_CONCEPT`       | `relevance` (0-1)    | How central the concept is to the memory  |
+| `SUPPORTS`          | `strength` (0-1)     | How strongly memory supports a goal       |
+| `PARTIALLY_ANSWERS` | `completeness` (0-1) | How much the memory answers a question    |
+| `BELONGS_TO`        | `isPrimary`          | Whether this is the main topic            |
+| `MENTIONS`          | `role`               | The entity's role (subject, tool, author) |
 
 ### Plasticity Operations
 
@@ -269,13 +280,13 @@ This model allows the memory system to learn and adapt based on actual usage pat
 
 All plasticity behavior is configurable through `PlasticityConfig`. Key tuneable aspects:
 
-| Category | Parameters | Purpose |
-|----------|------------|---------|
-| **Learning Rate** | `learning_rate` | Global multiplier (0=disabled, >1=faster) |
-| **Strengthening** | `base_strengthening_amount`, `strengthening_curve`, `max_strength` | How connections grow stronger |
-| **Decay** | `decay_curve`, `decay_half_life`, `decay_threshold` | How unused connections weaken |
-| **Pruning** | `pruning_threshold`, `auto_prune` | When to remove dead connections |
-| **Retrieval Effects** | `retrieval_strengthens`, `retrieval_weakens_competitors` | How accessing memories affects the graph |
-| **Hebbian Learning** | `hebbian_learning_amount`, `hebbian_creates_connections` | Co-access strengthening |
+| Category              | Parameters                                                         | Purpose                                   |
+| --------------------- | ------------------------------------------------------------------ | ----------------------------------------- |
+| **Learning Rate**     | `learning_rate`                                                    | Global multiplier (0=disabled, 1=normal)  |
+| **Strengthening**     | `strengthen_amount`, `curve`, `max_strength`                       | How connections grow stronger              |
+| **Decay**             | `decay_amount`, `decay_curve`, `decay_half_life`, `decay_threshold`| How unused connections weaken              |
+| **Pruning**           | `prune_threshold`, `auto_prune`                                    | When to remove dead connections            |
+| **Retrieval Effects** | `retrieval_strengthens`, `retrieval_weakens_competitors`           | How accessing memories affects the graph   |
+| **Hebbian Learning**  | `hebbian_amount`, `hebbian_creates_connections`                    | Co-access strengthening                    |
 
 See [Plasticity Configuration Guide](plasticity-config.md) for complete parameter reference.

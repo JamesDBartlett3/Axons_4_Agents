@@ -133,7 +133,7 @@ client.remove_memory_from_compartment(memory_id, project_compartment_id)
 ```
 
 **Fail-safe behavior**: When a memory is in multiple compartments:
-- **Connection formation**: Allowed if memories share ANY compartment, OR if ALL compartments allow external connections
+- **Connection formation**: Allowed if memories are in **exactly the same set** of compartments, OR if ALL compartments of BOTH memories allow external connections
 - **Data flow**: Blocked if ANY compartment blocks the flow direction
 
 ```python
@@ -469,7 +469,7 @@ class Permeability(Enum):
 | `get_memory_compartments(mem_id)` | Get all compartments for a memory |
 | `get_memories_in_compartment(comp_id)` | List memories in compartment |
 | `can_form_connection(mem1, mem2)` | Check if connection can form |
-| `can_data_flow(from_mem, to_mem)` | Check if data can flow (four-layer check) |
+| `can_data_flow(from_mem, to_mem)` | Check if data can flow (five-layer check) |
 | `set_memory_permeability(mem_ids, perm)` | Set permeability for memory(s) (accepts single ID or list) |
 | `get_memory_permeability(mem_id)` | Get memory permeability |
 | `set_connection_permeability(m1, m2, perm)` | Set connection permeability |
