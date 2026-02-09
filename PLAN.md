@@ -317,6 +317,81 @@ Complete `TODO.md` Phases 6–9 and update all documentation.
 
 ---
 
+## Phase 7 — Real-World Simulation Framework
+
+Validate the memory system under realistic conditions by simulating multi-turn conversations
+between a user and an LLM agent, with the agent using Axons as its memory backend.
+
+### Architecture
+
+An **orchestrator** agent manages the simulation by spawning two sub-agents:
+
+1. **Simulated User** — Acts like a real human interacting with an LLM. Asks questions, gives
+   instructions, shares preferences, works on projects, changes topics, contradicts earlier
+   statements, and returns to previous topics days later. Follows configurable personas and
+   scenario scripts.
+
+2. **Simulated Agent** — Acts like an LLM assistant that uses the Axons MCP tools as its memory
+   system. Stores memories implicitly (observations, preferences, project context) and explicitly
+   (when the user says "remember this"). Recalls relevant memories when answering questions.
+   Detects contradictions, tracks goals, and respects compartment boundaries.
+
+The orchestrator feeds user messages to the agent, feeds agent responses back to the user, and
+records metrics about graph memory usage at each turn.
+
+### Scenario Categories
+
+1. **Explicit memory** — "Remember that I prefer tabs over spaces"
+2. **Implicit observation** — User repeatedly asks for concise answers (agent infers preference)
+3. **Cross-session recall** — User returns after a gap and expects the agent to remember context
+4. **Contradiction handling** — User says "I use PostgreSQL" then later "We migrated to MySQL"
+5. **Multi-project isolation** — User switches between projects; memories shouldn't leak
+6. **Goal tracking** — User sets a goal, makes progress over multiple turns, agent tracks it
+7. **Associative recall** — User asks about a topic; agent finds related memories via concepts
+8. **Temporal context** — "What did we decide about the API last week?"
+9. **Source attribution** — "Where did I read about the rate limit?"
+10. **Plasticity under load** — Many memories stored; weak connections should decay, strong ones
+    should persist
+
+### Steps
+
+1. **Create simulation framework** (`axons/simulation/`):
+   - `orchestrator.py` — Manages the conversation loop, spawns sub-agents, records metrics
+   - `user_agent.py` — Simulated user with persona and scenario scripts
+   - `llm_agent.py` — Simulated LLM that uses Axons tools to store/recall memories
+   - `scenarios.py` — Predefined scenario scripts for each category above
+   - `metrics.py` — Tracks memory operations, recall accuracy, contradiction detection rate
+
+2. **Define evaluation metrics:**
+   - **Recall accuracy** — When the agent should remember something, does it?
+   - **Precision** — When the agent recalls something, is it relevant?
+   - **Contradiction detection rate** — How often are contradictions caught?
+   - **Compartment integrity** — Do memories leak across project boundaries?
+   - **Plasticity health** — Do connection strengths converge to meaningful values?
+   - **Latency** — How long do memory operations take as the graph grows?
+
+3. **Implement scenario runner:**
+   - Load a scenario script (sequence of user messages + expected agent behaviors)
+   - Run the conversation through the orchestrator
+   - Score the agent's memory usage against expected behaviors
+   - Generate a report with pass/fail per scenario and aggregate metrics
+
+4. **Run baseline simulation:**
+   - Execute all 10 scenario categories
+   - Establish baseline metrics
+   - Identify failure modes and edge cases
+
+### Verification
+
+- All 10 scenario categories execute without errors
+- Recall accuracy ≥ 90% for explicit memory requests
+- Contradiction detection rate ≥ 80%
+- Zero cross-compartment data leaks
+- Simulation completes in < 5 minutes for 100-turn conversations
+- Metrics report is generated with actionable insights
+
+---
+
 ## Key Decisions
 
 | Decision                                 | Rationale                                                                                                |
