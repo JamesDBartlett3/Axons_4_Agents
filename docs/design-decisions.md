@@ -280,13 +280,13 @@ This model allows the memory system to learn and adapt based on actual usage pat
 
 All plasticity behavior is configurable through `PlasticityConfig`. Key tuneable aspects:
 
-| Category              | Parameters                                                         | Purpose                                   |
-| --------------------- | ------------------------------------------------------------------ | ----------------------------------------- |
-| **Learning Rate**     | `learning_rate`                                                    | Global multiplier (0=disabled, 1=normal)  |
-| **Strengthening**     | `strengthen_amount`, `curve`, `max_strength`                       | How connections grow stronger              |
-| **Decay**             | `decay_amount`, `decay_curve`, `decay_half_life`, `decay_threshold`| How unused connections weaken              |
-| **Pruning**           | `prune_threshold`, `auto_prune`                                    | When to remove dead connections            |
-| **Retrieval Effects** | `retrieval_strengthens`, `retrieval_weakens_competitors`           | How accessing memories affects the graph   |
-| **Hebbian Learning**  | `hebbian_amount`, `hebbian_creates_connections`                    | Co-access strengthening                    |
+| Category              | Parameters                                                          | Purpose                                  |
+| --------------------- | ------------------------------------------------------------------- | ---------------------------------------- |
+| **Learning Rate**     | `learning_rate`                                                     | Global multiplier (0=disabled, 1=normal) |
+| **Strengthening**     | `strengthen_amount`, `curve`, `max_strength`                        | How connections grow stronger            |
+| **Decay**             | `decay_amount`, `decay_curve`, `decay_half_life`, `decay_threshold` | How unused connections weaken            |
+| **Pruning**           | `prune_threshold`, `auto_prune`                                     | When to remove dead connections          |
+| **Retrieval Effects** | `retrieval_strengthens`, `retrieval_weakens_competitors`            | How accessing memories affects the graph |
+| **Hebbian Learning**  | `hebbian_amount`, `hebbian_creates_connections`                     | Co-access strengthening                  |
 
 See [Plasticity Configuration Guide](plasticity-config.md) for complete parameter reference.

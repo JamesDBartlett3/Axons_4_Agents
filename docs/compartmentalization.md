@@ -27,14 +27,15 @@ A compartment is a named boundary that groups memories together. Each compartmen
 
 Permeability controls data flow direction through compartment boundaries. Think of it from the perspective of queries trying to retrieve data:
 
-| Permeability | Allows Inward | Allows Outward | Use Case |
-|--------------|---------------|----------------|----------|
-| `OPEN` | Yes | Yes | Default - no restrictions |
-| `CLOSED` | No | No | Complete isolation |
-| `OSMOTIC_INWARD` | Yes | No | Can read external data, but doesn't leak |
-| `OSMOTIC_OUTWARD` | No | Yes | Shares data out, but isn't influenced by external |
+| Permeability      | Allows Inward | Allows Outward | Use Case                                          |
+| ----------------- | ------------- | -------------- | ------------------------------------------------- |
+| `OPEN`            | Yes           | Yes            | Default - no restrictions                         |
+| `CLOSED`          | No            | No             | Complete isolation                                |
+| `OSMOTIC_INWARD`  | Yes           | No             | Can read external data, but doesn't leak          |
+| `OSMOTIC_OUTWARD` | No            | Yes            | Shares data out, but isn't influenced by external |
 
 **Data flow direction**:
+
 - **Inward**: Data flowing INTO the compartment (the compartment can retrieve external data)
 - **Outward**: Data flowing OUT OF the compartment (external queries can retrieve data from inside)
 
@@ -51,6 +52,7 @@ When querying data across memories, multiple layers are checked:
 **Fail-safe logic**: ANY layer that blocks will block the entire data flow. If a memory belongs to multiple compartments, ALL of them must allow the flow direction.
 
 This provides fine-grained control at multiple levels:
+
 - **Memory-level**: Individual memories can restrict their own visibility
 - **Compartment-level**: Groups of memories share a common policy (overlapping allowed)
 - **Connection-level**: Specific relationships can have custom rules
@@ -133,6 +135,7 @@ client.remove_memory_from_compartment(memory_id, project_compartment_id)
 ```
 
 **Fail-safe behavior**: When a memory is in multiple compartments:
+
 - **Connection formation**: Allowed if memories are in **exactly the same set** of compartments, OR if ALL compartments of BOTH memories allow external connections
 - **Data flow**: Blocked if ANY compartment blocks the flow direction
 
@@ -348,6 +351,7 @@ assert client.can_data_flow(other_mem, dual_mem)      # Allowed (both allow inwa
 ## Connection Formation Rules
 
 When `allow_external_connections=False`:
+
 - Organic connections (Hebbian learning) won't create links across the boundary
 - Explicit `link_memories()` with `check_compartments=True` will be blocked
 - Explicit `link_memories()` with `check_compartments=False` still works (for administrative purposes)
@@ -365,12 +369,12 @@ client.link_memories(mem1, mem2, check_compartments=False)
 
 ## Permeability Quick Reference
 
-| Permeability | Data Flows In? | Data Flows Out? | Typical Use Case |
-|--------------|----------------|-----------------|------------------|
-| `OPEN` | Yes | Yes | Default, unrestricted access |
-| `CLOSED` | No | No | Credentials, secrets, sandbox environments |
-| `OSMOTIC_INWARD` | Yes | No | Secure projects that need external references |
-| `OSMOTIC_OUTWARD` | No | Yes | Read-only knowledge bases, documentation |
+| Permeability      | Data Flows In? | Data Flows Out? | Typical Use Case                              |
+| ----------------- | -------------- | --------------- | --------------------------------------------- |
+| `OPEN`            | Yes            | Yes             | Default, unrestricted access                  |
+| `CLOSED`          | No             | No              | Credentials, secrets, sandbox environments    |
+| `OSMOTIC_INWARD`  | Yes            | No              | Secure projects that need external references |
+| `OSMOTIC_OUTWARD` | No             | Yes             | Read-only knowledge bases, documentation      |
 
 **Remember**: "Inward" and "Outward" refer to data flow direction, not query direction. A query from memory A to memory B causes data to flow FROM B TO A.
 
@@ -455,25 +459,25 @@ class Permeability(Enum):
 
 ### Client Methods
 
-| Method | Description |
-|--------|-------------|
-| `create_compartment(compartment)` | Create a new compartment |
-| `get_compartment(id)` | Get compartment by ID |
-| `get_compartment_by_name(name)` | Get compartment by name |
-| `update_compartment(id, ...)` | Update compartment properties |
-| `delete_compartment(id, reassign_memories)` | Delete a compartment |
-| `set_active_compartment(id)` | Set active compartment for new memories |
-| `get_active_compartment()` | Get current active compartment |
-| `add_memory_to_compartment(mem_ids, comp_id)` | Add memory(s) to compartment (accepts single ID or list) |
+| Method                                             | Description                                                   |
+| -------------------------------------------------- | ------------------------------------------------------------- |
+| `create_compartment(compartment)`                  | Create a new compartment                                      |
+| `get_compartment(id)`                              | Get compartment by ID                                         |
+| `get_compartment_by_name(name)`                    | Get compartment by name                                       |
+| `update_compartment(id, ...)`                      | Update compartment properties                                 |
+| `delete_compartment(id, reassign_memories)`        | Delete a compartment                                          |
+| `set_active_compartment(id)`                       | Set active compartment for new memories                       |
+| `get_active_compartment()`                         | Get current active compartment                                |
+| `add_memory_to_compartment(mem_ids, comp_id)`      | Add memory(s) to compartment (accepts single ID or list)      |
 | `remove_memory_from_compartment(mem_ids, comp_id)` | Remove memory(s) from compartment (accepts single ID or list) |
-| `get_memory_compartments(mem_id)` | Get all compartments for a memory |
-| `get_memories_in_compartment(comp_id)` | List memories in compartment |
-| `can_form_connection(mem1, mem2)` | Check if connection can form |
-| `can_data_flow(from_mem, to_mem)` | Check if data can flow (five-layer check) |
-| `set_memory_permeability(mem_ids, perm)` | Set permeability for memory(s) (accepts single ID or list) |
-| `get_memory_permeability(mem_id)` | Get memory permeability |
-| `set_connection_permeability(m1, m2, perm)` | Set connection permeability |
-| `get_connection_permeability(m1, m2)` | Get connection permeability |
+| `get_memory_compartments(mem_id)`                  | Get all compartments for a memory                             |
+| `get_memories_in_compartment(comp_id)`             | List memories in compartment                                  |
+| `can_form_connection(mem1, mem2)`                  | Check if connection can form                                  |
+| `can_data_flow(from_mem, to_mem)`                  | Check if data can flow (five-layer check)                     |
+| `set_memory_permeability(mem_ids, perm)`           | Set permeability for memory(s) (accepts single ID or list)    |
+| `get_memory_permeability(mem_id)`                  | Get memory permeability                                       |
+| `set_connection_permeability(m1, m2, perm)`        | Set connection permeability                                   |
+| `get_connection_permeability(m1, m2)`              | Get connection permeability                                   |
 
 ## Best Practices
 
