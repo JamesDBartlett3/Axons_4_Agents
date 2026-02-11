@@ -1,6 +1,6 @@
 # Design Decisions
 
-This document explains the reasoning behind the architectural and technical choices made for the Claude Memory Graph System.
+This document explains the reasoning behind the architectural and technical choices made for the Axons Memory Graph System.
 
 ## Why a Graph Database?
 
@@ -23,111 +23,120 @@ Graph databases store data as nodes and edges (relationships), which naturally m
                                       |
                               [:HAS_CONCEPT]
                                       |
-(Memory B)--[:HAS_CONCEPT]-->(Concept: "security")--[:RELATED_TO]-->(Concept: "authentication")
+(Memory B)--[:HAS_CONCEPT]-->(Concept: "security")--[:CONCEPT_RELATED_TO]-->(Concept: "authentication")
 ```
 
 This allows queries like:
+
 - "Find all memories related to 'authentication' within 2 relationship hops"
 - "What decisions were informed by memories about 'security'?"
 - "Which memories contradict each other?"
 
-## Why Memgraph?
+## Why LadybugDB?
 
 We evaluated several graph databases:
 
-| Database | Pros | Cons |
-|----------|------|------|
-| **Neo4j** | Most mature, best tooling, huge community | JVM-based (500MB+ RAM), slower startup |
-| **Memgraph** | C++ (fast, low memory), Cypher-compatible | Smaller community |
-| **ArangoDB** | Multi-model | AQL less intuitive for graphs |
-| **SurrealDB** | Modern, Rust-based | Very new, still maturing |
-| **FalkorDB** | Extremely fast | Limited Cypher support |
+| Database      | Pros                                      | Cons                                           |
+| ------------- | ----------------------------------------- | ---------------------------------------------- |
+| **Neo4j**     | Most mature, best tooling, huge community | JVM-based (500MB+ RAM), requires server setup  |
+| **Memgraph**  | C++ (fast, low memory), Cypher-compatible | Requires WSL on Windows, no macOS support      |
+| **ArangoDB**  | Multi-model                               | AQL less intuitive for graphs, server required |
+| **SurrealDB** | Modern, Rust-based                        | Very new, still maturing                       |
+| **LadybugDB** | Embedded, cross-platform, pip install     | Smaller community                              |
 
-### Decision: Memgraph
+### Decision: LadybugDB (formerly KùzuDB)
 
 **Primary reasons:**
 
-1. **Speed**: C++ implementation means faster queries and lower latency than JVM-based alternatives
-2. **Low memory footprint**: ~100-200MB at idle vs 500MB+ for Neo4j
-3. **Cypher compatibility**: Uses the same query language as Neo4j, so skills transfer and there's abundant documentation
-4. **Fast startup**: ~1 second vs Neo4j's 10-30 seconds
-5. **Extensibility**: MAGE library provides 60+ graph algorithms, and custom query modules can be written in Python/C++
+1. **Zero Setup**: Just `pip install real_ladybug` - no server, no Docker, no WSL, no configuration
+2. **Cross-Platform**: Native binaries for Windows, macOS, and Linux without any workarounds
+3. **Embedded**: Runs in-process like SQLite, data stored in a local directory
+4. **Speed**: C++ implementation means fast queries and low memory usage
+5. **Cypher Support**: Uses a Cypher-like query language, so existing knowledge transfers
+6. **Lightweight**: Small footprint, no background processes to manage
+7. **Actively Maintained**: Monthly releases, community-driven fork with investor backing
 
 **Trade-offs accepted:**
+
 - Smaller community than Neo4j
-- Fewer tutorials and examples
-- Must run in WSL on Windows (no native Windows binary)
+- Fewer advanced features than enterprise databases
+- Some Cypher syntax differences (minor)
 
-## Why WSL?
+### Previous Choice: KùzuDB (Archived)
 
-Memgraph doesn't have a native Windows installer. The options were:
+KùzuDB was archived by Kùzu Inc. on October 10, 2025. LadybugDB is the most active community fork,
+led by Arun Sharma (ex-Facebook, ex-Google), with an identical API and Cypher dialect. Migration
+required only changing the pip package name and import statement.
 
-1. **Docker**: Requires Docker Desktop, adds complexity
-2. **WSL**: Ubuntu runs natively in WSL2, Memgraph installs normally
-3. **Remote server**: Adds latency and infrastructure
+### Previous Choice: Memgraph (Deprecated)
 
-### Decision: WSL2 with Ubuntu
+We previously used Memgraph, which required:
 
-- Already available on most Windows developer machines
-- No additional software required beyond WSL itself
-- Memgraph runs as a systemd service (standard Linux administration)
-- Network is bridged, so localhost:7687 works from Windows
+- WSL2 on Windows (doesn't work on macOS)
+- systemd service management
+- Windows Task Scheduler for auto-start
+- Multiple configuration steps
+
+This created a 9-step setup process and platform lock-in. LadybugDB eliminates all of this complexity.
 
 ## Database Design: Why These Node Types?
 
 ### Core Nodes
 
-| Node Type | Purpose |
-|-----------|---------|
-| **Memory** | The actual memory content - the fundamental unit |
+| Node Type   | Purpose                                                                        |
+| ----------- | ------------------------------------------------------------------------------ |
+| **Memory**  | The actual memory content - the fundamental unit                               |
 | **Concept** | Abstract ideas that memories relate to (e.g., "authentication", "performance") |
-| **Keyword** | Specific terms for exact matching (e.g., "OAuth", "Redis") |
-| **Topic** | Broader subject areas (e.g., "Software Architecture", "User Preferences") |
+| **Keyword** | Specific terms for exact matching (e.g., "OAuth", "Redis")                     |
+| **Topic**   | Broader subject areas (e.g., "Software Architecture", "User Preferences")      |
 
 **Rationale**: Concepts, keywords, and topics provide three levels of granularity for finding related memories:
+
 - Keywords: exact term matching
 - Concepts: semantic grouping
 - Topics: high-level categorization
 
 ### Entity Nodes
 
-| Node Type | Purpose |
-|-----------|---------|
-| **Entity** | People, projects, tools, technologies, organizations |
+| Node Type  | Purpose                                                  |
+| ---------- | -------------------------------------------------------- |
+| **Entity** | People, projects, tools, technologies, organizations     |
 | **Source** | Where information came from (conversations, files, URLs) |
 
 **Rationale**: Entities create natural hubs - many memories mention the same person or tool. Sources enable provenance tracking ("where did I learn this?").
 
 ### Intentional Nodes
 
-| Node Type | Purpose |
-|-----------|---------|
-| **Decision** | Choices made and their rationale |
-| **Goal** | User objectives (active, achieved, abandoned) |
-| **Question** | Unresolved items, things to investigate |
+| Node Type    | Purpose                                       |
+| ------------ | --------------------------------------------- |
+| **Decision** | Choices made and their rationale              |
+| **Goal**     | User objectives (active, achieved, abandoned) |
+| **Question** | Unresolved items, things to investigate       |
 
 **Rationale**: These capture the "why" and "what next" aspects of memory:
+
 - Decisions can be traced back to the memories that informed them
 - Goals can be linked to supporting memories
 - Questions can be partially answered by multiple memories
 
 ### Contextual Nodes
 
-| Node Type | Purpose |
-|-----------|---------|
-| **Context** | Projects, tasks, conversations, sessions |
-| **Preference** | User likes/dislikes, working styles |
-| **TemporalMarker** | Time periods, sequences, "before/after" |
+| Node Type          | Purpose                                  |
+| ------------------ | ---------------------------------------- |
+| **Context**        | Projects, tasks, conversations, sessions |
+| **Preference**     | User likes/dislikes, working styles      |
+| **TemporalMarker** | Time periods, sequences, "before/after"  |
 
 **Rationale**: Context disambiguates - the same keyword might mean different things in different projects. Preferences accumulate over time. Temporal markers enable time-based queries.
 
 ### Meta Nodes
 
-| Node Type | Purpose |
-|-----------|---------|
-| **Contradiction** | When new information conflicts with old |
+| Node Type         | Purpose                                                         |
+| ----------------- | --------------------------------------------------------------- |
+| **Contradiction** | When new information conflicts with old                         |
+| **Compartment**   | Named boundaries for memory isolation with controlled data flow |
 
-**Rationale**: Explicit contradiction tracking prevents serving outdated information and enables resolution workflows.
+**Rationale**: Explicit contradiction tracking prevents serving outdated information and enables resolution workflows. Compartments enable memory isolation and controlled data flow direction, useful for security boundaries and context separation.
 
 ## Hybrid Storage: Graph + Markdown
 
@@ -143,29 +152,29 @@ The markdown directory serves a specific purpose: allowing Claude to quickly und
 ### Why Not Markdown-Only for Content?
 
 Early design considered storing summaries in the graph and full content in markdown. This was rejected because:
+
 1. Graph databases handle large text properties fine
 2. Having content in the graph enables full-text search within Cypher
 3. Single source of truth prevents sync issues
 
 ## Python Client Design
 
-### Why neo4j Driver?
+### Why LadybugDB's Native Python Bindings?
 
-Memgraph speaks the Bolt protocol (same as Neo4j). Options were:
+LadybugDB provides native Python bindings via pip:
 
-| Library | Pros | Cons |
-|---------|------|------|
-| **neo4j** (Python driver) | Lightweight, well-maintained, works with Memgraph | Name is confusing |
-| **gqlalchemy** | Memgraph's official ORM | Heavier, more dependencies |
-| **pymgclient** | Low-level C bindings | Requires compilation |
+| Library                    | Pros                                 | Cons                       |
+| -------------------------- | ------------------------------------ | -------------------------- |
+| **real_ladybug** (official) | Native, lightweight, well-maintained | Package name differs from DB name |
 
-**Decision**: neo4j driver - lightest option that works.
+**Decision**: Use the official `real_ladybug` package — API-compatible with the original KùzuDB `kuzu` package.
 
 ### API Design: Data Classes + Client
 
 The client uses:
+
 - **Data classes** for type safety and IDE completion
-- **MERGE for idempotency** - creating the same concept twice returns the existing one
+- **Check-then-create for idempotency** - creating the same concept twice returns the existing one
 - **Explicit relationship methods** - clear what connections are being made
 
 ```python
@@ -191,21 +200,100 @@ quick_store_memory(
 )
 ```
 
-## Auto-Start Design
+## Embedded Database Benefits
 
-### Requirements
+### No Auto-Start Needed
 
-1. Memgraph should be running whenever the user might need it
-2. No manual intervention after Windows reboot
-3. Minimal resource usage when idle
+Unlike server-based databases, LadybugDB:
 
-### Solution
+- Runs in your Python process
+- Starts automatically when you create a client
+- Stops when your program ends
+- No background services to manage
 
-1. **systemd in WSL**: `systemctl enable memgraph` makes it start when Ubuntu starts
-2. **WSL auto-start**: Windows Task Scheduler runs `wsl -d Ubuntu -- sleep infinity` at boot
-3. **sleep infinity**: Keeps WSL alive so systemd services remain running
+### Data Persistence
 
-This is the cleanest approach because:
-- Uses standard Linux service management
-- Uses standard Windows task scheduling
-- No custom scripts or hacks
+LadybugDB stores data in a directory you specify:
+
+- Default: `~/.axons_memory_db`
+- Custom: Pass `db_path` to `MemoryGraphClient`
+
+Data persists between sessions automatically.
+
+### Cross-Platform Consistency
+
+The same code works identically on:
+
+- Windows
+- macOS
+- Linux
+
+No platform-specific setup or workarounds required.
+
+## Brain Plasticity Model
+
+### The Biological Inspiration
+
+The human brain stores memories not as isolated units but as interconnected networks. Key features we emulate:
+
+1. **Weighted Connections**: Synapses have varying strengths - some connections are strong, others weak
+2. **Hebbian Learning**: "Neurons that fire together wire together" - co-activated memories strengthen their connection
+3. **Synaptic Depression**: Unused connections weaken over time
+4. **Synaptic Pruning**: Very weak connections are eventually removed
+
+### Implementation
+
+Every relationship between memories and other nodes carries properties:
+
+| Relationship        | Key Property         | Purpose                                   |
+| ------------------- | -------------------- | ----------------------------------------- |
+| `RELATES_TO`        | `strength` (0-1)     | Memory-to-memory connection weight        |
+| `HAS_CONCEPT`       | `relevance` (0-1)    | How central the concept is to the memory  |
+| `SUPPORTS`          | `strength` (0-1)     | How strongly memory supports a goal       |
+| `PARTIALLY_ANSWERS` | `completeness` (0-1) | How much the memory answers a question    |
+| `BELONGS_TO`        | `isPrimary`          | Whether this is the main topic            |
+| `MENTIONS`          | `role`               | The entity's role (subject, tool, author) |
+
+### Plasticity Operations
+
+```python
+# Synaptic potentiation - strengthen a connection
+client.strengthen_memory_link(id1, id2, amount=0.1)
+
+# Synaptic depression - weaken a connection
+client.weaken_memory_link(id1, id2, amount=0.1)
+
+# Hebbian learning - strengthen all connections between co-accessed memories
+client.apply_hebbian_learning([id1, id2, id3])
+
+# Time-based decay - weaken connections below threshold
+client.decay_weak_connections(threshold=0.3, decay_amount=0.05)
+
+# Pruning - remove near-zero connections
+client.prune_dead_connections(min_strength=0.01)
+```
+
+### Why This Matters
+
+Without plasticity, all connections are equally weighted. This loses critical information:
+
+- **Relevance fades**: A memory that mentioned Python once shouldn't be as connected to the Python concept as a memory entirely about Python
+- **Associations emerge**: Memories frequently accessed together should become more strongly linked
+- **Noise reduction**: Weak, rarely-reinforced connections can be pruned to focus on what matters
+
+This model allows the memory system to learn and adapt based on actual usage patterns, not just initial storage.
+
+### Tuneable Parameters
+
+All plasticity behavior is configurable through `PlasticityConfig`. Key tuneable aspects:
+
+| Category              | Parameters                                                          | Purpose                                  |
+| --------------------- | ------------------------------------------------------------------- | ---------------------------------------- |
+| **Learning Rate**     | `learning_rate`                                                     | Global multiplier (0=disabled, 1=normal) |
+| **Strengthening**     | `strengthen_amount`, `curve`, `max_strength`                        | How connections grow stronger            |
+| **Decay**             | `decay_amount`, `decay_curve`, `decay_half_life`, `decay_threshold` | How unused connections weaken            |
+| **Pruning**           | `prune_threshold`, `auto_prune`                                     | When to remove dead connections          |
+| **Retrieval Effects** | `retrieval_strengthens`, `retrieval_weakens_competitors`            | How accessing memories affects the graph |
+| **Hebbian Learning**  | `hebbian_amount`, `hebbian_creates_connections`                     | Co-access strengthening                  |
+
+See [Plasticity Configuration Guide](plasticity-config.md) for complete parameter reference.

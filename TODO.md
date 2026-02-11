@@ -20,9 +20,7 @@ Transform the Memory Graph System into an MCP (Model Context Protocol) server so
 - **Framework**: FastMCP (Python) - handles protocol complexity with simple decorators
 - **Transport**: stdio for local development, HTTP for production
 - **Language**: Python (matches existing memory_client.py)
-
-### Key Discovery
-Memgraph already has an official MCP server (`mcp-memgraph`) that could be extended or used as reference. However, our memory system has custom schema and logic, so we'll build a custom server that wraps our existing `memory_client.py`.
+- **Database**: LadybugDB (embedded, cross-platform)
 
 ---
 
@@ -32,19 +30,18 @@ Memgraph already has an official MCP server (`mcp-memgraph`) that could be exten
 **Estimated Complexity**: Low
 
 - [ ] Install FastMCP: `pip install fastmcp`
-- [ ] Create `memgraph_mcp_server.py` in `src/` directory
+- [ ] Create `mcp_server.py` in `src/` directory
 - [ ] Set up basic server structure with FastMCP
 - [ ] Implement health check tool to verify connectivity
 - [ ] Test with stdio transport locally
 
 **Files to Create**:
-- `src/memgraph_mcp_server.py` - Main MCP server
-- `src/requirements.txt` - Add fastmcp dependency
+- `src/mcp_server.py` - Main MCP server
 
 **Verification**:
 ```powershell
-claude mcp add --transport stdio memgraph-memory -- python src/memgraph_mcp_server.py
-claude mcp list  # Should show memgraph-memory
+claude mcp add --transport stdio axons-memory -- python src/mcp_server.py
+claude mcp list  # Should show axons-memory
 ```
 
 ---
@@ -215,16 +212,14 @@ Expose read-only data as MCP resources:
 ### Phase 9: Claude Code Integration
 **Estimated Complexity**: Low
 
-- [ ] Create installation script for Windows
-- [ ] Add MCP server to Claude Code configuration
 - [ ] Test full workflow: store memory → query → retrieve
-- [ ] Document configuration in setup-instructions.md
+- [ ] Document configuration in README
 
 **Installation Command**:
 ```powershell
-claude mcp add --transport stdio memgraph-memory `
-  --env MEMGRAPH_URI=bolt://localhost:7687 `
-  -- python C:\Users\James\ClaudeSandbox\ClaudeMemgraphSetup\src\memgraph_mcp_server.py
+claude mcp add --transport stdio axons-memory `
+  --env AXONS_DB_PATH=C:\Users\James\.axons_memory_db `
+  -- python C:\Users\James\GitHub\Axons_4_Agents\src\mcp_server.py
 ```
 
 ---
@@ -232,33 +227,29 @@ claude mcp add --transport stdio memgraph-memory `
 ## File Structure (After Implementation)
 
 ```
-ClaudeMemgraphSetup/
+Axons_4_Agents/
 ├── README.md
 ├── TODO.md                      # This file
+├── requirements.txt             # Python dependencies
 ├── docs/
 │   ├── design-decisions.md
 │   ├── schema.md
-│   ├── infrastructure.md
-│   ├── setup-instructions.md
-│   ├── usage-guide.md
 │   └── mcp-server-guide.md      # NEW: MCP-specific docs
 └── src/
-    ├── schema.cypher
     ├── memory_client.py
-    ├── memgraph_mcp_server.py   # NEW: MCP server
+    ├── mcp_server.py       # NEW: MCP server
     ├── test_memory_system.py
     ├── test_mcp_server.py       # NEW: MCP tests
-    ├── directory.md
-    └── requirements.txt         # NEW: Dependencies
+    └── directory.md
 ```
 
 ---
 
-## Dependencies to Add
+## Dependencies
 
 ```
 # requirements.txt
-neo4j>=5.0.0
+real_ladybug>=0.14.0
 fastmcp>=0.1.0
 ```
 
@@ -269,12 +260,15 @@ fastmcp>=0.1.0
 ```python
 from fastmcp import FastMCP
 from memory_client import MemoryGraphClient, quick_store_memory
+import os
 
 # Initialize MCP server
-mcp = FastMCP("memgraph-memory")
+mcp = FastMCP("axons-memory")
 
 # Initialize database client
-client = MemoryGraphClient(uri=os.environ.get("MEMGRAPH_URI", "bolt://localhost:7687"))
+db_path = os.environ.get("AXONS_DB_PATH", None)  # Uses default if not set
+client = MemoryGraphClient(db_path=db_path)
+client.initialize_schema()
 
 @mcp.tool()
 def store_memory(
@@ -336,8 +330,8 @@ if __name__ == "__main__":
 3. **Type hints are required** - FastMCP uses them to generate input schemas
 4. **Docstrings become tool descriptions** - Write clear, helpful descriptions
 5. **Handle errors gracefully** - Return meaningful error messages, don't crash
-6. **Test locally before registering** - Use `python memgraph_mcp_server.py` to check for syntax errors
-7. **Environment variables for config** - Use `MEMGRAPH_URI` instead of hardcoding
+6. **Test locally before registering** - Use `python mcp_server.py` to check for syntax errors
+7. **Environment variables for config** - Use `AXONS_DB_PATH` instead of hardcoding
 
 ---
 
@@ -345,7 +339,7 @@ if __name__ == "__main__":
 
 When complete, the following should work:
 
-1. Claude Code can list `memgraph-memory` in available MCP servers
+1. Claude Code can list `axons-memory` in available MCP servers
 2. I can say "store this as a memory" and Claude uses `store_memory` tool
 3. I can say "what do you know about X" and Claude queries the graph
 4. I can say "show me the memory directory" and Claude reads the resource
@@ -359,5 +353,5 @@ When complete, the following should work:
 - [FastMCP Documentation](https://gofastmcp.com/)
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
 - [Claude Code MCP Guide](https://docs.anthropic.com/en/docs/claude-code/mcp)
-- [Memgraph MCP Server (reference)](https://github.com/memgraph/ai-toolkit/tree/main/integrations/mcp-memgraph)
+- [LadybugDB Documentation](https://docs.ladybugdb.com/)
 - [MCP Specification](https://modelcontextprotocol.io/specification/2025-11-25)

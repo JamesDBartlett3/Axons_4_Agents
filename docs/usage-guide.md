@@ -9,11 +9,11 @@ This guide explains how to use the Memory Graph System in your applications.
 ```python
 from memory_client import MemoryGraphClient
 
-# Create a client (connects to localhost:7687 by default)
+# Create a client (database stored in ~/.axons_memory_db by default)
 client = MemoryGraphClient()
 
-# Or specify a different URI
-client = MemoryGraphClient(uri="bolt://localhost:7687")
+# Or specify a different database path
+client = MemoryGraphClient(db_path="/path/to/my/database")
 
 # Always close when done
 client.close()
@@ -32,6 +32,8 @@ The easiest way to store a memory with all its associations:
 from memory_client import MemoryGraphClient, quick_store_memory
 
 with MemoryGraphClient() as client:
+    client.initialize_schema()  # Only needed once
+
     memory_id = quick_store_memory(
         client,
         content="The full content of the memory goes here. This can be as long as needed.",
@@ -59,6 +61,8 @@ from memory_client import (
 )
 
 with MemoryGraphClient() as client:
+    client.initialize_schema()  # Only needed once
+
     # Create the memory
     memory = Memory(
         content="Full content here",
@@ -307,7 +311,7 @@ with MemoryGraphClient() as client:
 with MemoryGraphClient() as client:
     unresolved = client.get_unresolved_contradictions()
     for item in unresolved:
-        print(f"Contradiction: {item['c']['description']}")
+        print(f"Contradiction: {item['description']}")
         print(f"Conflicting memories: {len(item['memories'])}")
 ```
 
@@ -335,13 +339,14 @@ with MemoryGraphClient() as client:
 
 ## Raw Cypher Queries
 
-For advanced use cases, execute Cypher directly:
+For advanced use cases, execute Cypher-like queries directly (note: LadybugDB uses Cypher syntax with minor variations):
 
 ```python
 with MemoryGraphClient() as client:
     # Read query
     results = client._run_query("""
-        MATCH (m:Memory)-[:HAS_CONCEPT]->(c:Concept {name: $concept})
+        MATCH (m:Memory)-[:HAS_CONCEPT]->(c:Concept)
+        WHERE c.name = $concept
         RETURN m.summary as summary, m.created as created
         ORDER BY m.created DESC
         LIMIT 10
@@ -349,25 +354,33 @@ with MemoryGraphClient() as client:
 
     # Write query
     client._run_write("""
-        MATCH (m:Memory {id: $id})
+        MATCH (m:Memory)
+        WHERE m.id = $id
         SET m.confidence = $new_confidence
     """, {"id": memory_id, "new_confidence": 0.5})
 ```
 
 ## Best Practices
 
-### 1. Use MERGE-based methods for reusable nodes
+### 1. Initialize schema once
 
-Concepts, keywords, topics, entities, and contexts use MERGE, so calling `create_concept("auth")` twice returns the same node.
+```python
+client = MemoryGraphClient()
+client.initialize_schema()  # Only call this once per database
+```
 
-### 2. Link memories immediately after creation
+### 2. Use check-then-create for reusable nodes
+
+Concepts, keywords, topics, entities, and contexts check for existing nodes, so calling `create_concept(Concept(name="auth"))` twice returns the same node ID.
+
+### 3. Link memories immediately after creation
 
 ```python
 memory_id = client.create_memory(memory)
 client.link_memory_to_concept(memory_id, concept_id)  # Do this right away
 ```
 
-### 3. Update the directory after bulk operations
+### 4. Update the directory after bulk operations
 
 ```python
 # After adding many memories
@@ -376,20 +389,20 @@ with open("directory.md", "w") as f:
     f.write(markdown)
 ```
 
-### 4. Use context managers
+### 5. Use context managers
 
 ```python
-# Good - connection is always closed
+# Good - database resources are properly managed
 with MemoryGraphClient() as client:
     # Do stuff
 
-# Bad - might leak connections
+# Also OK - LadybugDB automatically manages resources
 client = MemoryGraphClient()
 # Do stuff
-# Forgot to close!
+client.close()
 ```
 
-### 5. Set appropriate confidence levels
+### 6. Set appropriate confidence levels
 
 - 1.0: Confirmed fact
 - 0.8-0.9: Very likely correct
@@ -429,12 +442,12 @@ with MemoryGraphClient() as client:
     # Store a memory
     memory_id = quick_store_memory(
         client,
-        content="We decided to use Memgraph because of its speed and Cypher support.",
-        summary="Database selection: Memgraph",
+        content="We decided to use LadybugDB because of its embedded nature and cross-platform support.",
+        summary="Database selection: LadybugDB",
         concepts=["graph database", "architecture"],
-        keywords=["memgraph", "cypher"],
+        keywords=["ladybug", "embedded"],
         topics=["Technology Decisions"],
-        entities=[("Memgraph", "technology")]
+        entities=[("LadybugDB", "technology")]
     )
 
     # Link to context and goal
@@ -443,8 +456,8 @@ with MemoryGraphClient() as client:
 
     # Record a decision
     decision = Decision(
-        description="Use Memgraph for the memory database",
-        rationale="Fast C++ implementation, Cypher-compatible, low memory usage"
+        description="Use LadybugDB for the memory database",
+        rationale="Embedded graph database, cross-platform, simple pip install, Cypher-like query language"
     )
     decision_id = client.create_decision(decision)
     client.link_memory_to_decision(memory_id, decision_id)
@@ -452,7 +465,7 @@ with MemoryGraphClient() as client:
     # Record a preference discovered
     pref = Preference(
         category="infrastructure",
-        preference="Prefer lightweight, fast databases over feature-rich heavy ones",
+        preference="Prefer embedded, lightweight databases over server-based architectures",
         strength=0.8
     )
     pref_id = client.create_preference(pref)
